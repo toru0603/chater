@@ -10,6 +10,8 @@ jobs:
   test:
     name: Unit + E2E Tests
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
 
     steps:
       - name: Checkout
