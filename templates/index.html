@@ -27,10 +27,19 @@
           <button id="leaveBtn" disabled>退出</button>
         </div>
 
+        <label>
+          メッセージ
+          <div class="message-row">
+            <input id="messageInput" type="text" placeholder="コメントを入力..." />
+            <button id="sendMsgBtn">送信</button>
+          </div>
+        </label>
+
         <p id="status" class="status">待機中</p>
       </section>
 
       <section class="video-grid" id="videos">
+        <div id="danmaku" class="danmaku-container"></div>
         <div class="video-tile" data-peer-id="local">
           <h3>自分</h3>
           <video id="localVideo" autoplay playsinline muted></video>

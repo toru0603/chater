@@ -6,6 +6,11 @@ const roomCodeInput = document.getElementById("roomCode");
 const localVideo = document.getElementById("localVideo");
 const videosContainer = document.getElementById("videos");
 
+// chat elements
+const messageInput = document.getElementById("messageInput");
+const sendMsgBtn = document.getElementById("sendMsgBtn");
+const danmakuContainer = document.getElementById("danmaku");
+
 let socket = null;
 let localStream = null;
 const peers = {}; // peerId -> RTCPeerConnection
@@ -135,6 +140,39 @@ async function handleSignal(message) {
   }
 }
 
+// Danmaku functions
+function addDanmaku(name, text) {
+  if (!danmakuContainer) return;
+  const msg = document.createElement('div');
+  msg.className = 'danmaku-message';
+  msg.textContent = name ? `${name}: ${text}` : text;
+  const containerHeight = danmakuContainer.clientHeight || (videosContainer.clientHeight || 300);
+  const laneHeight = 34;
+  const maxTop = Math.max(0, containerHeight - laneHeight);
+  const top = Math.floor(Math.random() * (maxTop + 1));
+  msg.style.top = `${top}px`;
+  const duration = (Math.random() * 6) + 8; // seconds
+  msg.style.setProperty('--duration', `${duration}s`);
+  danmakuContainer.appendChild(msg);
+  msg.addEventListener('animationend', () => {
+    try { danmakuContainer.removeChild(msg); } catch (e) {}
+  });
+}
+
+// message sending
+function sendMessage() {
+  const text = messageInput ? messageInput.value.trim() : '';
+  if (!text) return;
+  if (!socket || socket.readyState !== WebSocket.OPEN) { setStatus('未接続'); return; }
+  send({ type: 'chat', text });
+  if (messageInput) messageInput.value = '';
+}
+
+if (sendMsgBtn) sendMsgBtn.addEventListener('click', sendMessage);
+if (messageInput) messageInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') sendMessage();
+});
+
 async function startCall() {
   const roomCode = roomCodeInput.value.trim();
   const name = nameInput.value.trim() || 'Guest';
@@ -193,6 +231,11 @@ async function startCall() {
       removeRemoteVideoElement(message.id);
       // close pc if exists
       if (peers[message.id]) { try { peers[message.id].close(); } catch(e){} delete peers[message.id]; }
+      return;
+    }
+
+    if (message.type === 'chat') {
+      addDanmaku(message.from_name || '匿名', message.text || '');
       return;
     }
 

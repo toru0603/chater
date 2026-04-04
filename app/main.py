@@ -96,6 +96,26 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
             if message_type == "leave":
                 break
 
+            # chat messages - broadcast to room
+            if message_type == "chat":
+                text = message.get("text", "")
+                if not text:
+                    continue
+                participants = await room_manager.get_room_participants(room_code)
+                for p in participants:
+                    try:
+                        await p.websocket.send_json(
+                            {
+                                "type": "chat",
+                                "from": participant.id,
+                                "from_name": participant.name,
+                                "text": text,
+                            }
+                        )
+                    except Exception:
+                        pass
+                continue
+
             if message_type in {"offer", "answer", "candidate"}:
                 target_id = message.get("target")
                 if not target_id:
