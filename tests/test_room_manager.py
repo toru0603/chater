@@ -18,16 +18,16 @@ def test_add_get_remove_peer():
 
     # Add first participant
     p1, existing1 = asyncio.run(manager.add_participant("room1", "Alice", ws1))
-    assert isinstance(existing1, list) and len(existing1) == 0
+    assert existing1 == []
     assert p1.role == "host"
     assert p1.name == "Alice"
     assert p1.room_code == "room1"
 
     # Add second participant and verify matching
     p2, existing2 = asyncio.run(manager.add_participant("room1", "Bob", ws2))
-    assert isinstance(existing2, list) and len(existing2) == 1
-    assert existing2[0].id == p1.id
-    assert p2.role == "participant"
+    assert existing2 is not None
+    assert len(existing2) == 1 and existing2[0].id == p1.id
+    assert p2.role == "guest"
 
     # get_room_participants should return both participants
     participants = asyncio.run(manager.get_room_participants("room1"))
@@ -44,6 +44,8 @@ def test_add_get_remove_peer():
     # Remove second participant (room should become empty)
     removed2, remaining2, empty2 = asyncio.run(manager.remove_participant(p2.id))
     assert removed2 is not None and removed2.id == p2.id
+    assert remaining2 == []
+
     assert empty2 is True
 
     # Removing nonexistent participant returns (None, [], False)

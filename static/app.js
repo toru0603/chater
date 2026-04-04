@@ -254,7 +254,7 @@ async function startCall() {
     }
 
     if (message.type === 'participants') {
-      setStatus('既存参加者が見つかりました');
+      setStatus('マッチ成功');
       const parts = message.participants || [];
       // register colors first so titles get colored
       for (const p of parts) {
@@ -276,6 +276,21 @@ async function startCall() {
       return;
     }
 
+    if (message.type === 'matched') {
+      setStatus('マッチ成功');
+      const parts = message.participants || [];
+      for (const p of parts) {
+        if (p.color) participantColors[p.id] = p.color;
+        createRemoteVideoElement(p.id, p.name);
+        const tile = document.querySelector(`[data-peer-id="${p.id}"]`);
+        if (tile) {
+          const title = tile.querySelector('h3');
+          if (title && participantColors[p.id]) title.style.color = participantColors[p.id];
+        }
+      }
+      return;
+    }
+
     if (message.type === 'participant-joined') {
       setStatus(`参加者が増えました: ${message.name}`);
       if (message.color) participantColors[message.id] = message.color;
@@ -290,6 +305,13 @@ async function startCall() {
 
     if (message.type === 'signal') {
       await handleSignal(message);
+      return;
+    }
+
+    if (message.type === 'peer-left') {
+      setStatus('相手が退出しました');
+      removeRemoteVideoElement(message.id);
+      if (peers[message.id]) { try { peers[message.id].close(); } catch(e){} delete peers[message.id]; }
       return;
     }
 
