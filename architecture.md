@@ -3,6 +3,8 @@
 cheter は、ブラウザで使う動画チャットアプリです。  
 ユーザ同士が「待ち受け番号」を決めてマッチングし、WebRTC で音声・映像をやり取りします。
 
+**注（現状の実装）**: このリポジトリの現在の実装ではデータベース（MySQL など）は使用しておらず、ルーム情報はプロセス内メモリで管理されています。アーキテクチャ図は将来的な拡張例として MySQL を含めています。
+
 ![cheter 構成図](./files/cheter-architecture.svg)
 
 ## 簡単な構成
@@ -79,6 +81,8 @@ flowchart TB
 - WebRTC 接続に必要な情報を交換する
 - SDP offer / answer をやり取りする
 - ICE candidate を相手に届ける
+- サーバは participant の ID を使ったターゲット指定型のシグナリングをサポートする（クライアントは `target` フィールドで送信相手を指定）
+- 新規参加者には既存参加者のリスト (`participants`) を返し、既存参加者には `participant-joined` を送信する。退出時は `participant-left` を送る
 - 通話そのものは持たず、接続準備だけを担当する
 
 ### WebRTC
