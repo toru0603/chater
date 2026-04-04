@@ -46,6 +46,35 @@ pytest -q
 
 小さな改善やバグ修正の PR を歓迎します。ドキュメントやテストがあるとマージが早くなります。
 
+## WebSocket API
+
+### エンドポイント
+
+- ws://<host>/ws/{room_code}  （例: ws://localhost:8000/ws/room123）
+
+### クライアント -> サーバ（例）
+
+- join: {"type": "join", "name": "Alice"}
+- offer/answer/candidate: {"type": "offer", "target": "<participant_id>", "data": {...}}
+- leave: {"type": "leave"}
+
+### サーバ -> クライアント（主なメッセージ）
+
+- joined: {"type": "joined", "room_code": ..., "participant_id": ..., "role": ..., "name": ...}
+- waiting: {"type": "waiting", "room_code": ..., "message": ...}
+- participants: {"type": "participants", "room_code": ..., "participants": [{"id": ..., "name": ..., "role": ...}, ...]}
+- participant-joined: {"type": "participant-joined", "id": ..., "name": ..., "role": ...}
+- participant-left: {"type": "participant-left", "id": ..., "name": ...}
+- signal: {"type": "signal", "signal_type": "offer|answer|candidate", "data": ..., "from": "<sender_id>", "from_name": "<sender_name>"}
+
+### 備考
+
+- サーバは最初の参加者を `host` として割り当てます（以降は `participant`）。
+- 最大参加者数は app.room_manager.MAX_PARTICIPANTS（デフォルト: 10）で制限されます。
+- ルーム情報はプロセス内メモリで保持されます。水平スケール時は Redis 等を導入して共有する必要があります。
+
 ## ライセンス
 
 MIT
+
+ci: confirm CI runs on PR
