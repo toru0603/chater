@@ -16,6 +16,9 @@ let localStream = null;
 const peers = {}; // peerId -> RTCPeerConnection
 const remoteVideos = {}; // peerId -> HTMLVideoElement
 const pendingCandidates = {}; // peerId -> []
+const participantColors = {}; // peerId -> color
+let ownParticipantId = null;
+let ownName = null;
 
 const rtcConfig = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -39,6 +42,7 @@ function createRemoteVideoElement(peerId, name) {
 
   const title = document.createElement('h3');
   title.textContent = name || peerId;
+  if (participantColors[peerId]) title.style.color = participantColors[peerId];
   tile.appendChild(title);
 
   const vid = document.createElement('video');
@@ -141,11 +145,22 @@ async function handleSignal(message) {
 }
 
 // Danmaku functions
-function addDanmaku(name, text) {
+function addDanmaku(fromId, name, text, color) {
   if (!danmakuContainer) return;
   const msg = document.createElement('div');
   msg.className = 'danmaku-message';
-  msg.textContent = name ? `${name}: ${text}` : text;
+
+  const nameSpan = document.createElement('span');
+  nameSpan.textContent = name ? `${name}: ` : '';
+  nameSpan.style.color = color || participantColors[fromId] || '#fff';
+  nameSpan.style.fontWeight = '700';
+  nameSpan.style.marginRight = '8px';
+  msg.appendChild(nameSpan);
+
+  const textSpan = document.createElement('span');
+  textSpan.textContent = text || '';
+  msg.appendChild(textSpan);
+
   const containerHeight = danmakuContainer.clientHeight || (videosContainer.clientHeight || 300);
   const laneHeight = 34;
   const maxTop = Math.max(0, containerHeight - laneHeight);
@@ -198,14 +213,38 @@ async function startCall() {
     const message = JSON.parse(ev.data);
 
     if (message.type === 'waiting') { setStatus(message.message); return; }
-    if (message.type === 'joined') { setStatus(`参加しました: ${message.room_code}`); return; }
+    if (message.type === 'joined') {
+      // store own id and color and update local title
+      ownParticipantId = message.participant_id;
+      ownName = message.name || ownName;
+      if (message.color) participantColors[ownParticipantId] = message.color;
+      const localTile = document.querySelector('[data-peer-id="local"]');
+      if (localTile) {
+        const title = localTile.querySelector('h3');
+        if (title) {
+          title.textContent = ownName || title.textContent;
+          title.style.color = participantColors[ownParticipantId] || title.style.color;
+        }
+        localTile.dataset.peerId = ownParticipantId;
+      }
+      setStatus(`参加しました: ${message.room_code}`);
+      return; }
 
     if (message.type === 'participants') {
       setStatus('既存参加者が見つかりました');
       const parts = message.participants || [];
+      // register colors first so titles get colored
+      for (const p of parts) {
+        if (p.color) participantColors[p.id] = p.color;
+      }
       // create peer connections and initiate offers to existing participants
       for (const p of parts) {
         createRemoteVideoElement(p.id, p.name);
+        const tile = document.querySelector(`[data-peer-id="${p.id}"]`);
+        if (tile) {
+          const title = tile.querySelector('h3');
+          if (title && participantColors[p.id]) title.style.color = participantColors[p.id];
+        }
         const pc = ensurePeerConnection(p.id);
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
@@ -216,8 +255,13 @@ async function startCall() {
 
     if (message.type === 'participant-joined') {
       setStatus(`参加者が増えました: ${message.name}`);
-      // wait for incoming offer from the new participant
+      if (message.color) participantColors[message.id] = message.color;
       createRemoteVideoElement(message.id, message.name);
+      const tile = document.querySelector(`[data-peer-id="${message.id}"]`);
+      if (tile) {
+        const title = tile.querySelector('h3');
+        if (title && participantColors[message.id]) title.style.color = participantColors[message.id];
+      }
       return;
     }
 
@@ -235,7 +279,9 @@ async function startCall() {
     }
 
     if (message.type === 'chat') {
-      addDanmaku(message.from_name || '匿名', message.text || '');
+      // remember color and show danmaku with colored name
+      if (message.color) participantColors[message.from] = message.color;
+      addDanmaku(message.from, message.from_name || '匿名', message.text || '', message.color || participantColors[message.from]);
       return;
     }
 
