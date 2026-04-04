@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520">
+  <defs>
+    <style>
+      .box { fill: #f8fafc; stroke: #334155; stroke-width: 2; rx: 12; ry: 12; }
+      .title { font: 700 24px sans-serif; fill: #0f172a; }
+      .text { font: 500 18px sans-serif; fill: #0f172a; }
+      .small { font: 500 16px sans-serif; fill: #334155; }
+      .line { stroke: #475569; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#475569" />
+    </marker>
+  </defs>
+
+  <rect x="30" y="40" width="210" height="120" class="box" />
+  <text x="135" y="88" text-anchor="middle" class="title">User A</text>
+  <text x="135" y="125" text-anchor="middle" class="small">Browser</text>
+
+  <rect x="30" y="210" width="210" height="120" class="box" />
+  <text x="135" y="258" text-anchor="middle" class="title">User B</text>
+  <text x="135" y="295" text-anchor="middle" class="small">Browser</text>
+
+  <rect x="315" y="125" width="250" height="170" class="box" />
+  <text x="440" y="173" text-anchor="middle" class="title">Web Frontend</text>
+  <text x="440" y="212" text-anchor="middle" class="small">待ち受け番号入力</text>
+  <text x="440" y="242" text-anchor="middle" class="small">通話画面 / 操作</text>
+
+  <rect x="640" y="90" width="250" height="120" class="box" />
+  <text x="765" y="138" text-anchor="middle" class="title">App Server</text>
+  <text x="765" y="174" text-anchor="middle" class="small">API / マッチング</text>
+
+  <rect x="640" y="250" width="250" height="120" class="box" />
+  <text x="765" y="298" text-anchor="middle" class="title">WebRTC</text>
+  <text x="765" y="334" text-anchor="middle" class="small">音声・映像通信</text>
+
+  <rect x="960" y="90" width="200" height="120" class="box" />
+  <text x="1060" y="138" text-anchor="middle" class="title">MySQL</text>
+  <text x="1060" y="174" text-anchor="middle" class="small">DB</text>
+
+  <rect x="960" y="250" width="200" height="120" class="box" />
+  <text x="1060" y="298" text-anchor="middle" class="title">STUN</text>
+  <text x="1060" y="334" text-anchor="middle" class="small">接続確認</text>
+
+  <rect x="960" y="400" width="200" height="90" class="box" />
+  <text x="1060" y="435" text-anchor="middle" class="title">TURN</text>
+  <text x="1060" y="465" text-anchor="middle" class="small">必要なときだけ中継</text>
+
+  <path d="M240 100 L315 170" class="line" />
+  <path d="M240 270 L315 230" class="line" />
+  <path d="M565 190 L640 150" class="line" />
+  <path d="M565 230 L640 300" class="line" />
+  <path d="M890 150 L960 150" class="line" />
+  <path d="M890 310 L960 310" class="line" />
+  <path d="M1060 370 L1060 400" class="line" />
+
+  <text x="600" y="30" text-anchor="middle" class="title">cheter 簡易構成図</text>
+</svg>

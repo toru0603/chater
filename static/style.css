@@ -1,0 +1,70 @@
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.layout {
+  display: grid;
+  gap: 20px;
+  padding: 24px;
+  grid-template-columns: 320px 1fr;
+}
+
+.panel, .video-grid article {
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.sub, .status {
+  color: #475569;
+}
+
+label {
+  display: block;
+  margin: 12px 0;
+}
+
+input, button {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  padding: 10px 12px;
+  font-size: 16px;
+}
+
+button {
+  background: #2563eb;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+button:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.video-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+video {
+  width: 100%;
+  min-height: 320px;
+  background: #0f172a;
+  border-radius: 12px;
+}
