@@ -4,9 +4,12 @@ import asyncio
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, List, Dict
 
 from fastapi import WebSocket
+
+
+MAX_PARTICIPANTS = 10
 
 
 class RoomFullError(Exception):
@@ -26,27 +29,27 @@ class Participant:
 @dataclass(slots=True)
 class Room:
     code: str
-    participants: dict[str, Participant] = field(default_factory=dict)
+    participants: Dict[str, Participant] = field(default_factory=dict)
 
-    def peer_of(self, participant_id: str) -> Optional[Participant]:
-        for pid, participant in self.participants.items():
-            if pid != participant_id:
-                return participant
-        return None
+    def peers_of(self, participant_id: str) -> List[Participant]:
+        return [p for pid, p in self.participants.items() if pid != participant_id]
+
+    def participant_list(self) -> List[Participant]:
+        return list(self.participants.values())
 
 
 class RoomManager:
     def __init__(self) -> None:
-        self._rooms: dict[str, Room] = {}
+        self._rooms: Dict[str, Room] = {}
         self._lock = asyncio.Lock()
 
-    async def add_participant(self, room_code: str, name: str, websocket: WebSocket) -> tuple[Participant, Optional[Participant]]:
+    async def add_participant(self, room_code: str, name: str, websocket: WebSocket) -> tuple[Participant, List[Participant]]:
         async with self._lock:
             room = self._rooms.setdefault(room_code, Room(code=room_code))
-            if len(room.participants) >= 2:
+            if len(room.participants) >= MAX_PARTICIPANTS:
                 raise RoomFullError(room_code)
 
-            role = "host" if not room.participants else "guest"
+            role = "host" if not room.participants else "participant"
             participant = Participant(
                 id=uuid.uuid4().hex,
                 name=name,
@@ -54,28 +57,31 @@ class RoomManager:
                 role=role,
                 websocket=websocket,
             )
-            peer = room.peer_of(next(iter(room.participants.keys()))) if room.participants else None
+            existing = list(room.participants.values())
             room.participants[participant.id] = participant
-            if len(room.participants) == 2:
-                peer = room.peer_of(participant.id)
-            return participant, peer
+            return participant, existing
 
-    async def remove_participant(self, participant_id: str) -> tuple[Optional[Participant], bool]:
+    async def remove_participant(self, participant_id: str) -> tuple[Optional[Participant], List[Participant], bool]:
         async with self._lock:
             room = next((room for room in self._rooms.values() if participant_id in room.participants), None)
             if room is None:
-                return None, False
+                return None, [], False
 
-            room.participants.pop(participant_id, None)
-            peer = room.peer_of(participant_id)
+            removed = room.participants.pop(participant_id, None)
+            remaining = list(room.participants.values())
             empty = len(room.participants) == 0
             if empty:
                 self._rooms.pop(room.code, None)
-            return peer, empty
+            return removed, remaining, empty
 
-    async def get_peer(self, participant_id: str) -> Optional[Participant]:
+    async def get_participant(self, participant_id: str) -> Optional[Participant]:
         async with self._lock:
-            room = next((room for room in self._rooms.values() if participant_id in room.participants), None)
-            if room is None:
-                return None
-            return room.peer_of(participant_id)
+            for room in self._rooms.values():
+                if participant_id in room.participants:
+                    return room.participants.get(participant_id)
+            return None
+
+    async def get_room_participants(self, room_code: str) -> List[Participant]:
+        async with self._lock:
+            room = self._rooms.get(room_code)
+            return list(room.participants.values()) if room else []

@@ -12,7 +12,7 @@ body {
   grid-template-columns: 320px 1fr;
 }
 
-.panel, .video-grid article {
+.panel, .video-tile {
   background: #fff;
   border: 1px solid #cbd5e1;
   border-radius: 16px;
@@ -58,13 +58,18 @@ button:disabled {
 
 .video-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.video-tile h3 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
 }
 
 video {
   width: 100%;
-  min-height: 320px;
+  min-height: 180px;
   background: #0f172a;
   border-radius: 12px;
 }

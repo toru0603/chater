@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Unit + E2E Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov httpx playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Run tests with coverage
+        run: |
+          pytest --maxfail=1 --disable-warnings --cov=app --cov-branch --cov-report=xml
+
+      - name: Check coverage thresholds
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET, sys
+          tree=ET.parse('coverage.xml')
+          root=tree.getroot()
+          pkg = root.find('packages').find('package')
+          line_rate=float(pkg.get('line-rate'))*100
+          branch_rate=float(pkg.get('branch-rate'))*100
+          print(f'Line coverage: {line_rate:.1f}%, Branch coverage: {branch_rate:.1f}%')
+          if line_rate < 90.0 or branch_rate < 80.0:
+              print('Coverage thresholds not met', file=sys.stderr)
+              sys.exit(1)
+          PY
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
