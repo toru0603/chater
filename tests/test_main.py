@@ -24,9 +24,12 @@ def test_websocket_flow():
 
     with client.websocket_connect("/ws/room123") as ws1:
         ws1.send_json({"type": "join", "name": "Alice"})
+        print('DEBUG: ws1 sent join')
         joined = ws1.receive_json()
+        print('DEBUG: ws1 received joined ->', joined)
         assert joined["type"] == "joined"
         waiting = ws1.receive_json()
+        print('DEBUG: ws1 received waiting ->', waiting)
         assert waiting["type"] == "waiting"
 
         with client.websocket_connect("/ws/room123") as ws2:
@@ -35,10 +38,10 @@ def test_websocket_flow():
             assert joined2["type"] == "joined"
 
             matched2 = ws2.receive_json()
-            assert matched2["type"] == "matched"
+            assert matched2["type"] == "participants"
 
             matched1 = ws1.receive_json()
-            assert matched1["type"] == "matched"
+            assert matched1["type"] == "participant-joined"
 
             # offer signaling forwarded from ws2 -> ws1
             ws2.send_json({"type": "offer", "data": {"sdp": "dummy"}})
@@ -46,10 +49,10 @@ def test_websocket_flow():
             assert sig["type"] == "signal"
             assert sig["signal_type"] == "offer"
 
-            # leave: ws2 leaves, ws1 should receive peer-left
+            # leave: ws2 leaves, ws1 should receive participant-left
             ws2.send_json({"type": "leave"})
             peer_left = ws1.receive_json()
-            assert peer_left["type"] == "peer-left"
+            assert peer_left["type"] == "participant-left"
 
 
 def test_invalid_join():
