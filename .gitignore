@@ -1,0 +1,74 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+pip-wheel-metadata/
+
+# Virtual environments
+venv/
+ENV/
+env/
+.env
+.env.local
+.venv/
+venv.bak/
+env.bak/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+coverage.*
+coverage.xml
+htmlcov/
+
+# IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# macOS
+.DS_Store
+
+# Logs and temp
+*.log
+tmp/
+temp/
+*.tmp
+
+# node
+node_modules/
+
+# compiled python
+*.pyc
+
+# local settings
+local_settings.py
+
+# Optional: ignore editor swap files
+*~
+*.swp
+
+# Allow list: keep project files
+!requirements.txt
+!architecture.md
+!files/**
