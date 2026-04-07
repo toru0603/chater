@@ -24,12 +24,9 @@ def test_websocket_flow():
 
     with client.websocket_connect("/ws/room123") as ws1:
         ws1.send_json({"type": "join", "name": "Alice"})
-        print('DEBUG: ws1 sent join')
         joined = ws1.receive_json()
-        print('DEBUG: ws1 received joined ->', joined)
         assert joined["type"] == "joined"
         waiting = ws1.receive_json()
-        print('DEBUG: ws1 received waiting ->', waiting)
         assert waiting["type"] == "waiting"
 
         with client.websocket_connect("/ws/room123") as ws2:
@@ -44,7 +41,7 @@ def test_websocket_flow():
             assert matched1["type"] == "participant-joined"
 
             # offer signaling forwarded from ws2 -> ws1
-            ws2.send_json({"type": "offer", "data": {"sdp": "dummy"}})
+            ws2.send_json({"type": "offer", "target": joined["participant_id"], "data": {"sdp": "dummy"}})
             sig = ws1.receive_json()
             assert sig["type"] == "signal"
             assert sig["signal_type"] == "offer"
