@@ -22,7 +22,7 @@ def test_join_wait_and_match():
 
         with client.websocket_connect("/ws/room1") as ws2:
             ws2.send_json({"type": "join", "name": "Bob"})
-            joined2 = ws2.receive_json()
+            _ = ws2.receive_json()
             assert joined2["type"] == "joined"
 
             # ws2 should receive participants/matched about existing participants
@@ -66,7 +66,7 @@ def test_offer_forwarding_and_peer_left():
 
         with client.websocket_connect("/ws/room_offer") as ws2:
             ws2.send_json({"type": "join", "name": "Bob"})
-            joined2 = ws2.receive_json()
+            _ = ws2.receive_json()
             # ws2 receives participants/matched
             _ = ws2.receive_json()
             # ws1 receives notification about new participant

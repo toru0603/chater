@@ -2,7 +2,6 @@ import sys
 import subprocess
 import time
 import urllib.request
-import os
 
 from playwright.sync_api import sync_playwright
 
