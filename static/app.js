@@ -265,8 +265,35 @@ async function startCall() {
       return;
     }
 
+    if (message.type === 'matched') {
+      const p = message.peer || {};
+      if (p.color) participantColors[p.id] = p.color;
+      createRemoteVideoElement(p.id, p.name);
+      const tileMatched = document.querySelector(`[data-peer-id="${p.id}"]`);
+      if (tileMatched) {
+        const titleMatched = tileMatched.querySelector('h3');
+        if (titleMatched && participantColors[p.id]) titleMatched.style.color = participantColors[p.id];
+      }
+      setStatus('マッチ成功');
+      if (message.initiator) {
+        const pc = ensurePeerConnection(p.id);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        send({ type: 'offer', target: p.id, data: pc.localDescription });
+      }
+      return;
+    }
+
     if (message.type === 'signal') {
       await handleSignal(message);
+      return;
+    }
+
+    if (message.type === 'peer-left') {
+      removeRemoteVideoElement(message.id);
+      if (peers[message.id]) { try { peers[message.id].close(); } catch(e){} delete peers[message.id]; }
+      // ensure message is visible after connection state updates
+      setTimeout(() => { setStatus('相手が退出しました'); }, 50);
       return;
     }
 

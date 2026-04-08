@@ -43,7 +43,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
             return
 
         room_name = str(join_message.get("name") or "Guest")
-        participant, existing = await room_manager.add_participant(room_code, room_name, websocket)
+        participant, peer = await room_manager.add_participant(room_code, room_name, websocket)
         participant_id = participant.id
 
         await websocket.send_json(
@@ -57,39 +57,35 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
             }
         )
 
-        if not existing:
+        if not peer:
             await websocket.send_json(
                 {
                     "type": "waiting",
                     "room_code": room_code,
-                    "message": f"room {room_code} is waiting for peers",
+                    "message": f"room {room_code} is waiting for a peer",
                 }
             )
         else:
-            # Inform the new participant about existing members
+            # Notify both participants that they are matched
             await websocket.send_json(
                 {
-                    "type": "participants",
+                    "type": "matched",
                     "room_code": room_code,
-                    "participants": [
-                        {"id": p.id, "name": p.name, "role": p.role, "color": p.color} for p in existing
-                    ],
+                    "peer": {"id": peer.id, "name": peer.name, "role": peer.role, "color": peer.color},
+                    "initiator": True,
                 }
             )
-            # Notify existing participants about the new joiner
-            for p in existing:
-                try:
-                    await p.websocket.send_json(
-                        {
-                            "type": "participant-joined",
-                            "id": participant.id,
-                            "name": participant.name,
-                            "role": participant.role,
-                            "color": participant.color,
-                        }
-                    )
-                except Exception:
-                    pass
+            try:
+                await peer.websocket.send_json(
+                    {
+                        "type": "matched",
+                        "room_code": room_code,
+                        "peer": {"id": participant.id, "name": participant.name, "role": participant.role, "color": participant.color},
+                        "initiator": False,
+                    }
+                )
+            except Exception:
+                pass
 
         while True:
             message = await websocket.receive_json()
@@ -121,9 +117,12 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
 
             if message_type in {"offer", "answer", "candidate"}:
                 target_id = message.get("target")
-                if not target_id:
-                    continue
-                target = await room_manager.get_participant(target_id)
+                target = None
+                if target_id:
+                    target = await room_manager.get_participant(target_id)
+                else:
+                    # No explicit target: forward to the single peer if present
+                    target = await room_manager.get_peer(participant.id)
                 if not target:
                     continue
                 await target.websocket.send_json(
@@ -139,16 +138,12 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
         pass
     finally:
         if participant_id:
-            removed, remaining, empty = await room_manager.remove_participant(participant_id)
-            if removed is not None:
-                # Notify remaining participants that someone left
-                for p in remaining:
-                    try:
-                        await p.websocket.send_json(
-                            {"type": "participant-left", "id": removed.id, "name": removed.name}
-                        )
-                    except Exception:
-                        pass
+            peer, empty = await room_manager.remove_participant(participant_id)
+            if peer is not None:
+                try:
+                    await peer.websocket.send_json({"type": "peer-left", "id": participant_id})
+                except Exception:
+                    pass
             # ensure websocket is closed
             try:
                 await websocket.close()
