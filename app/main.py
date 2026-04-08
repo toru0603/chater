@@ -146,7 +146,21 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
 
             # audio on/off - notify peers about sender's audio state
             if message_type == "audio":
-                enabled = bool(message.get("enabled"))
+                raw_enabled = message.get("enabled")
+                # validate/parse enabled so malformed payloads (e.g. "false") don't get treated as truthy
+                if isinstance(raw_enabled, bool):
+                    enabled = raw_enabled
+                elif isinstance(raw_enabled, str):
+                    low = raw_enabled.strip().lower()
+                    if low in ("true", "false"):
+                        enabled = low == "true"
+                    else:
+                        # invalid payload - ignore
+                        continue
+                else:
+                    # invalid payload type - ignore
+                    continue
+
                 participants = await room_manager.get_room_participants(room_code)
                 for p in participants:
                     if p.id == participant.id:

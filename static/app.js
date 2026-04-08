@@ -203,6 +203,13 @@ async function startCall() {
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     localVideo.srcObject = localStream;
+    // initialize camera/audio enabled flags based on actual track states
+    const vtracks = localStream.getVideoTracks();
+    cameraEnabled = vtracks && vtracks.length > 0 ? vtracks.some(t => t.enabled) : false;
+    const atracks = localStream.getAudioTracks();
+    audioEnabled = atracks && atracks.length > 0 ? atracks.some(t => t.enabled) : false;
+    if (toggleCamBtn) toggleCamBtn.textContent = cameraEnabled ? 'カメラOFF' : 'カメラON';
+    if (toggleAudioBtn) toggleAudioBtn.textContent = audioEnabled ? 'マイクOFF' : 'マイクON';
   } catch (err) {
     setStatus(`カメラ/マイクを取得できません: ${err.message}`);
     return;
@@ -213,8 +220,8 @@ async function startCall() {
     send({ type: 'join', name });
     setStatus('サーバに接続しました');
     joinBtn.disabled = true; leaveBtn.disabled = false;
-    if (toggleCamBtn) { toggleCamBtn.disabled = false; toggleCamBtn.textContent = 'カメラOFF'; }
-    if (toggleAudioBtn) { toggleAudioBtn.disabled = false; toggleAudioBtn.textContent = 'マイクOFF'; }
+    if (toggleCamBtn) { toggleCamBtn.disabled = false; toggleCamBtn.textContent = cameraEnabled ? 'カメラOFF' : 'カメラON'; }
+    if (toggleAudioBtn) { toggleAudioBtn.disabled = false; toggleAudioBtn.textContent = audioEnabled ? 'マイクOFF' : 'マイクON'; }
   };
 
   socket.onmessage = async (ev) => {
@@ -327,7 +334,18 @@ async function startCall() {
 
     if (message.type === 'audio') {
       const from = message.from;
-      const enabled = !!message.enabled;
+      const raw = message.enabled;
+      let enabled;
+      if (typeof raw === 'boolean') {
+        enabled = raw;
+      } else if (typeof raw === 'string') {
+        const low = raw.trim().toLowerCase();
+        if (low === 'true') enabled = true;
+        else if (low === 'false') enabled = false;
+        else return; // invalid payload
+      } else {
+        return; // invalid payload
+      }
       const vid = remoteVideos[from];
       if (vid) {
         const tile = vid.parentElement;
@@ -368,6 +386,9 @@ function leaveCall() {
   if (socket) { socket.close(); socket = null; }
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
   localVideo.srcObject = null;
+  // reset UI state so toggles reflect the absence of tracks
+  cameraEnabled = true;
+  audioEnabled = true;
   joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCamBtn) { toggleCamBtn.disabled = true; toggleCamBtn.textContent = 'カメラOFF'; } if (toggleAudioBtn) { toggleAudioBtn.disabled = true; toggleAudioBtn.textContent = 'マイクOFF'; } setStatus('待機中');
 }
 
