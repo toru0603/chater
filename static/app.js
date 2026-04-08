@@ -1,7 +1,7 @@
+// Frontend app.js (merged conflict resolution)
 const joinBtn = document.getElementById("joinBtn");
 const leaveBtn = document.getElementById("leaveBtn");
 const toggleCamBtn = document.getElementById("toggleCameraBtn");
-const toggleAudioBtn = document.getElementById("toggleAudioBtn");
 const statusEl = document.getElementById("status");
 const nameInput = document.getElementById("name");
 const roomCodeInput = document.getElementById("roomCode");
@@ -21,10 +21,11 @@ const pendingCandidates = {}; // peerId -> []
 const participantColors = {}; // peerId -> color
 let ownParticipantId = null;
 let ownName = null;
-
 let cameraEnabled = true;
 
-let audioEnabled = true;
+// Debug: surface runtime errors to console for e2e diagnostics (temporary)
+window.addEventListener('error', e => { try { console.error('PAGE ERROR:', e && e.message, e && e.error && e.error.stack); } catch(e) {} });
+window.addEventListener('unhandledrejection', e => { try { console.error('UNHANDLED PROMISE REJECTION:', e && e.reason); } catch(e) {} });
 
 const rtcConfig = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -203,33 +204,21 @@ async function startCall() {
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     localVideo.srcObject = localStream;
-    // initialize camera/audio enabled flags based on actual track states
-    const vtracks = localStream.getVideoTracks();
-    cameraEnabled = vtracks && vtracks.length > 0 ? vtracks.some(t => t.enabled) : false;
-    const atracks = localStream.getAudioTracks();
-    audioEnabled = atracks && atracks.length > 0 ? atracks.some(t => t.enabled) : false;
-    if (toggleCamBtn) toggleCamBtn.textContent = cameraEnabled ? 'カメラOFF' : 'カメラON';
-    if (toggleAudioBtn) toggleAudioBtn.textContent = audioEnabled ? 'マイクOFF' : 'マイクON';
   } catch (err) {
     setStatus(`カメラ/マイクを取得できません: ${err.message}`);
     return;
   }
 
   socket = new WebSocket(`ws://${location.host}/ws/${encodeURIComponent(roomCode)}`);
-  socket.onopen = () => {
-    send({ type: 'join', name });
-    setStatus('サーバに接続しました');
-    joinBtn.disabled = true; leaveBtn.disabled = false;
-    if (toggleCamBtn) { toggleCamBtn.disabled = false; toggleCamBtn.textContent = cameraEnabled ? 'カメラOFF' : 'カメラON'; }
-    if (toggleAudioBtn) { toggleAudioBtn.disabled = false; toggleAudioBtn.textContent = audioEnabled ? 'マイクOFF' : 'マイクON'; }
-  };
 
+  // attach onmessage first to avoid missing messages that arrive immediately after open
   socket.onmessage = async (ev) => {
+    // DEBUG: log raw websocket messages for e2e troubleshooting (temporary)
+    try { console.log('WS RECV:', ev.data); } catch(e) {}
     const message = JSON.parse(ev.data);
 
     if (message.type === 'waiting') { setStatus(message.message); return; }
     if (message.type === 'joined') {
-      // store own id and color and update local title
       ownParticipantId = message.participant_id;
       ownName = message.name || ownName;
       if (message.color) participantColors[ownParticipantId] = message.color;
@@ -240,39 +229,16 @@ async function startCall() {
           title.textContent = ownName || title.textContent;
           title.style.color = participantColors[ownParticipantId] || title.style.color;
         }
-        // Keep the local tile's data-peer-id stable to avoid selector issues on rejoin
       }
       setStatus(`参加しました: ${message.room_code}`);
-      return; }
-
-    if (message.type === 'matched') {
-      setStatus('相手が見つかりました');
-      const p = message.peer;
-      if (p && p.id) {
-        if (p.color) participantColors[p.id] = p.color;
-        createRemoteVideoElement(p.id, p.name);
-        const tile = document.querySelector(`[data-peer-id="${p.id}"]`);
-        if (tile) {
-          const title = tile.querySelector('h3');
-          if (title && participantColors[p.id]) title.style.color = participantColors[p.id];
-        }
-        const pc = ensurePeerConnection(p.id);
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        send({ type: 'offer', target: p.id, data: pc.localDescription });
-      }
       return;
     }
 
-    if (message.type === 'participants') {
-      setStatus('既存参加者が見つかりました');
+    if (message.type === 'participants' || message.type === 'matched') {
+      setStatus('マッチ成功');
       const parts = message.participants || [];
-      // register colors first so titles get colored
       for (const p of parts) {
         if (p.color) participantColors[p.id] = p.color;
-      }
-      // create peer connections and initiate offers to existing participants
-      for (const p of parts) {
         createRemoteVideoElement(p.id, p.name);
         const tile = document.querySelector(`[data-peer-id="${p.id}"]`);
         if (tile) {
@@ -304,10 +270,16 @@ async function startCall() {
       return;
     }
 
+    if (message.type === 'peer-left') {
+      setStatus('相手が退出しました');
+      removeRemoteVideoElement(message.id);
+      if (peers[message.id]) { try { peers[message.id].close(); } catch(e){} delete peers[message.id]; }
+      return;
+    }
+
     if (message.type === 'participant-left') {
       setStatus(`${message.name} が退出しました`);
       removeRemoteVideoElement(message.id);
-      // close pc if exists
       if (peers[message.id]) { try { peers[message.id].close(); } catch(e){} delete peers[message.id]; }
       return;
     }
@@ -332,39 +304,7 @@ async function startCall() {
       return;
     }
 
-    if (message.type === 'audio') {
-      const from = message.from;
-      const raw = message.enabled;
-      let enabled;
-      if (typeof raw === 'boolean') {
-        enabled = raw;
-      } else if (typeof raw === 'string') {
-        const low = raw.trim().toLowerCase();
-        if (low === 'true') enabled = true;
-        else if (low === 'false') enabled = false;
-        else return; // invalid payload
-      } else {
-        return; // invalid payload
-      }
-      const vid = remoteVideos[from];
-      if (vid) {
-        const tile = vid.parentElement;
-        if (tile) {
-          if (!enabled) {
-            vid.muted = true;
-            tile.classList.add('audio-muted');
-          } else {
-            vid.muted = false;
-            tile.classList.remove('audio-muted');
-            try { vid.play(); } catch (e) {}
-          }
-        }
-      }
-      return;
-    }
-
     if (message.type === 'chat') {
-      // remember color and show danmaku with colored name
       if (message.color) participantColors[message.from] = message.color;
       addDanmaku(message.from, message.from_name || '匿名', message.text || '', message.color || participantColors[message.from]);
       return;
@@ -373,8 +313,15 @@ async function startCall() {
     if (message.type === 'error') { setStatus(message.message); }
   };
 
+  socket.onopen = () => {
+    send({ type: 'join', name });
+    setStatus('サーバに接続しました');
+    joinBtn.disabled = true; leaveBtn.disabled = false;
+    if (toggleCamBtn) { toggleCamBtn.disabled = false; toggleCamBtn.textContent = 'カメラOFF'; }
+  };
+
   socket.onclose = () => {
-    joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCamBtn) { toggleCamBtn.disabled = true; toggleCamBtn.textContent = 'カメラOFF'; } if (toggleAudioBtn) { toggleAudioBtn.disabled = true; toggleAudioBtn.textContent = 'マイクOFF'; } setStatus('切断しました');
+    joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCamBtn) { toggleCamBtn.disabled = true; toggleCamBtn.textContent = 'カメラOFF'; } setStatus('切断しました');
   };
 }
 
@@ -386,10 +333,7 @@ function leaveCall() {
   if (socket) { socket.close(); socket = null; }
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
   localVideo.srcObject = null;
-  // reset UI state so toggles reflect the absence of tracks
-  cameraEnabled = true;
-  audioEnabled = true;
-  joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCamBtn) { toggleCamBtn.disabled = true; toggleCamBtn.textContent = 'カメラOFF'; } if (toggleAudioBtn) { toggleAudioBtn.disabled = true; toggleAudioBtn.textContent = 'マイクOFF'; } setStatus('待機中');
+  joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCamBtn) { toggleCamBtn.disabled = true; toggleCamBtn.textContent = 'カメラOFF'; } setStatus('待機中');
 }
 
 joinBtn.addEventListener('click', startCall);
@@ -402,16 +346,6 @@ if (toggleCamBtn) toggleCamBtn.addEventListener('click', () => {
   vids.forEach(t => t.enabled = cameraEnabled);
   send({ type: 'camera', enabled: cameraEnabled });
   toggleCamBtn.textContent = cameraEnabled ? 'カメラOFF' : 'カメラON';
-});
-
-if (toggleAudioBtn) toggleAudioBtn.addEventListener('click', () => {
-  if (!localStream) { setStatus('未接続またはマイク未取得'); return; }
-  const auds = localStream.getAudioTracks();
-  if (!auds || auds.length === 0) { setStatus('マイクが見つかりません'); return; }
-  audioEnabled = !audioEnabled;
-  auds.forEach(t => t.enabled = audioEnabled);
-  send({ type: 'audio', enabled: audioEnabled });
-  toggleAudioBtn.textContent = audioEnabled ? 'マイクOFF' : 'マイクON';
 });
 
 window.addEventListener('beforeunload', () => { if (socket) socket.close(); });

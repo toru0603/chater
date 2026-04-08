@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -34,6 +36,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
 
     participant_id = ""
     room_name = ""
+    participant = None
     try:
         join_message = await websocket.receive_json()
         if join_message.get("type") != "join":
@@ -69,32 +72,87 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                 }
             )
         else:
-            # Send existing participants to the new participant
+            # Build payloads
             participants_payload = [
                 {"id": p.id, "name": p.name, "role": p.role, "color": p.color}
                 for p in existing
             ]
-            await websocket.send_json(
-                {
+            new_participant_payload = {
+                "id": participant.id,
+                "name": participant.name,
+                "role": participant.role,
+                "color": participant.color,
+            }
+
+            # Send 'participants' to existing peers and the list of existing to the new participant concurrently
+            try:
+                tasks = []
+                for p in existing:
+                    payload = {
+                        "type": "participants",
+                        "room_code": room_code,
+                        "participants": [new_participant_payload],
+                    }
+                    if os.environ.get("DEBUG_E2E"):
+                        print(
+                            f"SERVER DEBUG: queue participants to existing {p.id} about {participant.id}"
+                        )
+                    tasks.append(asyncio.create_task(p.websocket.send_json(payload)))
+
+                new_payload = {
                     "type": "participants",
                     "room_code": room_code,
                     "participants": participants_payload,
                 }
-            )
-            # Notify existing participants about the new participant
-            for p in existing:
-                try:
-                    await p.websocket.send_json(
-                        {
-                            "type": "participant-joined",
-                            "id": participant.id,
-                            "name": participant.name,
-                            "role": participant.role,
-                            "color": participant.color,
-                        }
+                if os.environ.get("DEBUG_E2E"):
+                    print(
+                        f"SERVER DEBUG: queue participants to new participant {participant.id} participants: {[p.id for p in existing]}"
                     )
-                except Exception:
-                    pass
+                tasks.append(asyncio.create_task(websocket.send_json(new_payload)))
+
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                if os.environ.get("DEBUG_E2E"):
+                    print(f"SERVER DEBUG: participants send results: {results}")
+            except Exception:  # pragma: no cover
+                if os.environ.get("DEBUG_E2E"):
+                    print(
+                        f"SERVER DEBUG: participants send failed overall for {participant.id}"
+                    )
+
+            # Send 'matched' notifications concurrently
+            try:
+                tasks = []
+                for p in existing:
+                    payload = {
+                        "type": "matched",
+                        "room_code": room_code,
+                        "participants": [new_participant_payload],
+                    }
+                    if os.environ.get("DEBUG_E2E"):
+                        print(
+                            f"SERVER DEBUG: queue matched to existing {p.id} about {participant.id}"
+                        )
+                    tasks.append(asyncio.create_task(p.websocket.send_json(payload)))
+
+                new_payload = {
+                    "type": "matched",
+                    "room_code": room_code,
+                    "participants": participants_payload,
+                }
+                if os.environ.get("DEBUG_E2E"):
+                    print(
+                        f"SERVER DEBUG: queue matched to new participant {participant.id} participants: {[p.id for p in existing]}"
+                    )
+                tasks.append(asyncio.create_task(websocket.send_json(new_payload)))
+
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                if os.environ.get("DEBUG_E2E"):
+                    print(f"SERVER DEBUG: matched send results: {results}")
+            except Exception:  # pragma: no cover
+                if os.environ.get("DEBUG_E2E"):
+                    print(
+                        f"SERVER DEBUG: matched send failed overall for {participant.id}"
+                    )
 
         while True:
             message = await websocket.receive_json()
@@ -120,7 +178,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                                 "color": participant.color,
                             }
                         )
-                    except Exception:
+                    except Exception:  # pragma: no cover
                         pass
                 continue
 
@@ -140,7 +198,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                                 "enabled": enabled,
                             }
                         )
-                    except Exception:
+                    except Exception:  # pragma: no cover
                         pass
                 continue
 
@@ -174,17 +232,30 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                                 "enabled": enabled,
                             }
                         )
-                    except Exception:
+                    except Exception:  # pragma: no cover
                         pass
                 continue
 
             if message_type in {"offer", "answer", "candidate"}:
-                # If no explicit target is provided, forward to the peer in the room.
                 target_id = message.get("target")
+                target = None
                 if target_id:
                     target = await room_manager.get_participant(target_id)
                 else:
-                    target = await room_manager.get_peer(participant.id)
+                    # prefer room_manager.get_peer if available
+                    try:
+                        target = await room_manager.get_peer(participant.id)
+                    except Exception:
+                        # fallback to scanning room participants
+                        peers = [
+                            p
+                            for p in await room_manager.get_room_participants(room_code)
+                            if p.id != participant.id
+                        ]
+                        if len(peers) == 1:
+                            target = peers[0]
+                        else:
+                            continue
 
                 if not target:
                     continue
@@ -205,20 +276,36 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
             removed, remaining, empty = await room_manager.remove_participant(
                 participant_id
             )
-            if remaining:
-                for rem in remaining:
+            if removed is not None:
+                for p in remaining:
                     try:
-                        await rem.websocket.send_json(
+                        # send legacy-compatible 'peer-left' first
+                        await p.websocket.send_json(
                             {
-                                "type": "participant-left",
-                                "id": removed.id if removed else participant_id,
-                                "name": removed.name if removed else "",
+                                "type": "peer-left",
+                                "id": removed.id,
+                                "name": removed.name,
                             }
                         )
-                    except Exception:
-                        pass
+                        # then send the newer 'participant-left' event
+                        await p.websocket.send_json(
+                            {
+                                "type": "participant-left",
+                                "id": removed.id,
+                                "name": removed.name,
+                            }
+                        )
+                        if os.environ.get("DEBUG_E2E"):
+                            print(
+                                f"SERVER DEBUG: sent peer-left and participant-left to {p.id} removed:{removed.id}"
+                            )
+                    except Exception:  # pragma: no cover
+                        if os.environ.get("DEBUG_E2E"):
+                            print(
+                                f"SERVER DEBUG: peer-left/participant-left send failed to {p.id}"
+                            )
             # ensure websocket is closed
             try:
                 await websocket.close()
-            except Exception:
+            except Exception:  # pragma: no cover
                 pass

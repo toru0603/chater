@@ -33,9 +33,14 @@ def test_camera_broadcast():
             joined1 = ws1.receive_json()
             assert joined1["type"] in {"participant-joined", "matched", "participants"}
 
-            # Bob toggles camera off
+            # Bob toggles camera off; skip any intermediate matched/participants messages
             ws2.send_json({"type": "camera", "enabled": False})
-            cam = ws1.receive_json()
+            while True:
+                cam = ws1.receive_json()
+                if cam.get("type") in {"participants", "matched"}:
+                    continue
+                break
+
             assert cam["type"] == "camera"
             assert cam["from_name"] == "Bob"
             assert cam["enabled"] is False
