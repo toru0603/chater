@@ -3,6 +3,7 @@ name: Enforce E2E required
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -11,6 +12,7 @@ permissions:
 jobs:
   set-protection:
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
     steps:
       - name: Ensure E2E is required in branch protection
         uses: actions/github-script@v6
@@ -33,7 +35,6 @@ jobs:
               });
               console.log('Set required checks to:', all);
             } catch (err) {
-              // If not found, create with e2e only
               if (err.status === 404) {
                 await github.request('PUT /repos/{owner}/{repo}/branches/{branch}/protection', {
                   owner, repo, branch,
