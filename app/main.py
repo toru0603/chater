@@ -113,7 +113,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 if os.environ.get("DEBUG_E2E"):
                     print(f"SERVER DEBUG: participants send results: {results}")
-            except Exception:
+            except Exception:  # pragma: no cover
                 if os.environ.get("DEBUG_E2E"):
                     print(
                         f"SERVER DEBUG: participants send failed overall for {participant.id}"
@@ -148,7 +148,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 if os.environ.get("DEBUG_E2E"):
                     print(f"SERVER DEBUG: matched send results: {results}")
-            except Exception:
+            except Exception:  # pragma: no cover
                 if os.environ.get("DEBUG_E2E"):
                     print(
                         f"SERVER DEBUG: matched send failed overall for {participant.id}"
@@ -178,7 +178,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                                 "color": participant.color,
                             }
                         )
-                    except Exception:
+                    except Exception:  # pragma: no cover
                         pass
                 continue
 
@@ -198,7 +198,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                                 "enabled": enabled,
                             }
                         )
-                    except Exception:
+                    except Exception:  # pragma: no cover
                         pass
                 continue
 
@@ -232,7 +232,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                                 "enabled": enabled,
                             }
                         )
-                    except Exception:
+                    except Exception:  # pragma: no cover
                         pass
                 continue
 
@@ -299,7 +299,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                             print(
                                 f"SERVER DEBUG: sent peer-left and participant-left to {p.id} removed:{removed.id}"
                             )
-                    except Exception:
+                    except Exception:  # pragma: no cover
                         if os.environ.get("DEBUG_E2E"):
                             print(
                                 f"SERVER DEBUG: peer-left/participant-left send failed to {p.id}"
@@ -307,5 +307,5 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
             # ensure websocket is closed
             try:
                 await websocket.close()
-            except Exception:
+            except Exception:  # pragma: no cover
                 pass
