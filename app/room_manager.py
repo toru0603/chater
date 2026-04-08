@@ -56,16 +56,19 @@ class RoomManager:
 
     async def add_participant(
         self, room_code: str, name: str, websocket: WebSocket
-    ) -> Tuple[Participant, Optional[Participant]]:
-        """Add a participant. Returns (participant, peer) where peer is None for the
-        first participant and the existing participant for the second joiner.
+    ) -> Tuple[Participant, List[Participant]]:
+        """Add a participant. Returns (participant, existing_participants).
+
+        existing_participants is a list of participants that were in the room before
+        the new participant joined (empty for the first joiner).
         """
         with self._lock:
             room = self._rooms.setdefault(room_code, Room(code=room_code))
             if len(room.participants) >= MAX_PARTICIPANTS:
                 raise RoomFullError(room_code)
 
-            role = "host" if not room.participants else "guest"
+            existing = list(room.participants.values())
+            role = "host" if not existing else "participant"
             pid = uuid.uuid4().hex
             color = DEFAULT_COLORS[int(pid[:8], 16) % len(DEFAULT_COLORS)]
             participant = Participant(
@@ -77,22 +80,17 @@ class RoomManager:
                 websocket=websocket,
             )
 
-            # determine peer (None if first participant)
-            peer: Optional[Participant] = None
-            if room.participants:
-                # only one existing participant supported by tests
-                peer = next(iter(room.participants.values()))
-
             room.participants[participant.id] = participant
-            return participant, peer
+            return participant, existing
 
     async def remove_participant(
         self, participant_id: str
-    ) -> Tuple[Optional[Participant], bool]:
-        """Remove a participant and return (peer_after_remove, empty).
+    ) -> Tuple[Optional[Participant], List[Participant], bool]:
+        """Remove a participant and return (removed, remaining_list, empty).
 
-        peer_after_remove is the remaining participant (if any), empty is True when
-        the room becomes empty after removal.
+        removed is the participant removed (or None). remaining_list is the list of
+        participants left in the room after removal. empty is True when the room
+        becomes empty.
         """
         with self._lock:
             room = next(
@@ -100,17 +98,15 @@ class RoomManager:
                 None,
             )
             if room is None:
-                return None, False
+                return None, [], False
 
-            # remove and compute remaining
-            room.participants.pop(participant_id, None)
+            removed = room.participants.pop(participant_id, None)
             remaining = list(room.participants.values())
             empty = len(room.participants) == 0
             if empty:
                 self._rooms.pop(room.code, None)
 
-            peer_after_remove = remaining[0] if remaining else None
-            return peer_after_remove, empty
+            return removed, remaining, empty
 
     async def get_peer(self, participant_id: str) -> Optional[Participant]:
         """Return the other participant in the same room, or None if not found."""
