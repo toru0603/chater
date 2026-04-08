@@ -1,11 +1,13 @@
 import asyncio
+
 import pytest
 
-from app.room_manager import RoomManager, RoomFullError
+from app.room_manager import RoomFullError, RoomManager
 
 
 class DummyWebSocket:
     """Lightweight stand-in for FastAPI WebSocket in RoomManager tests."""
+
     pass
 
 
@@ -45,7 +47,9 @@ def test_add_get_remove_peer():
     assert empty2 is True
 
     # Removing nonexistent participant returns (None, [], False)
-    none_removed, none_remaining, none_empty = asyncio.run(manager.remove_participant("nonexistent"))
+    none_removed, none_remaining, none_empty = asyncio.run(
+        manager.remove_participant("nonexistent")
+    )
     assert none_removed is None
     assert none_remaining == []
     assert none_empty is False
@@ -57,6 +61,7 @@ def test_room_full_error():
 
     # Fill the room up to the configured MAX_PARTICIPANTS and ensure overflow raises
     from app.room_manager import MAX_PARTICIPANTS
+
     for i in range(MAX_PARTICIPANTS):
         asyncio.run(manager.add_participant("room2", str(i), DummyWebSocket()))
 

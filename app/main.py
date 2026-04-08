@@ -7,8 +7,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .room_manager import RoomFullError, RoomManager
-
+from .room_manager import RoomManager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = BASE_DIR / "templates"
@@ -38,12 +37,16 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
     try:
         join_message = await websocket.receive_json()
         if join_message.get("type") != "join":
-            await websocket.send_json({"type": "error", "message": "join message is required"})
+            await websocket.send_json(
+                {"type": "error", "message": "join message is required"}
+            )
             await websocket.close(code=1008)
             return
 
         room_name = str(join_message.get("name") or "Guest")
-        participant, existing = await room_manager.add_participant(room_code, room_name, websocket)
+        participant, existing = await room_manager.add_participant(
+            room_code, room_name, websocket
+        )
         participant_id = participant.id
 
         await websocket.send_json(
@@ -66,30 +69,43 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                 }
             )
         else:
-            # Inform the new participant about existing members
+            peer = existing[0]
+            # Send participants to the new participant and notify the existing peer
+            participants_payload = [
+                {
+                    "id": peer.id,
+                    "name": peer.name,
+                    "role": peer.role,
+                    "color": peer.color,
+                },
+                {
+                    "id": participant.id,
+                    "name": participant.name,
+                    "role": participant.role,
+                    "color": participant.color,
+                },
+            ]
+            # Inform the new participant
             await websocket.send_json(
                 {
                     "type": "participants",
                     "room_code": room_code,
-                    "participants": [
-                        {"id": p.id, "name": p.name, "role": p.role, "color": p.color} for p in existing
-                    ],
+                    "participants": participants_payload,
                 }
             )
-            # Notify existing participants about the new joiner
-            for p in existing:
-                try:
-                    await p.websocket.send_json(
-                        {
-                            "type": "participant-joined",
-                            "id": participant.id,
-                            "name": participant.name,
-                            "role": participant.role,
-                            "color": participant.color,
-                        }
-                    )
-                except Exception:
-                    pass
+            # Notify existing peer about the new participant
+            try:
+                await peer.websocket.send_json(
+                    {
+                        "type": "participant-joined",
+                        "id": participant.id,
+                        "name": participant.name,
+                        "role": participant.role,
+                        "color": participant.color,
+                    }
+                )
+            except Exception:
+                pass
 
         while True:
             message = await websocket.receive_json()
@@ -120,12 +136,16 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                 continue
 
             if message_type in {"offer", "answer", "candidate"}:
+                # If no explicit target is provided, forward to the peer in the room.
                 target_id = message.get("target")
-                if not target_id:
-                    continue
-                target = await room_manager.get_participant(target_id)
+                if target_id:
+                    target = await room_manager.get_participant(target_id)
+                else:
+                    target = await room_manager.get_peer(participant.id)
+
                 if not target:
                     continue
+
                 await target.websocket.send_json(
                     {
                         "type": "signal",
@@ -139,16 +159,22 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
         pass
     finally:
         if participant_id:
-            removed, remaining, empty = await room_manager.remove_participant(participant_id)
-            if removed is not None:
-                # Notify remaining participants that someone left
-                for p in remaining:
-                    try:
-                        await p.websocket.send_json(
-                            {"type": "participant-left", "id": removed.id, "name": removed.name}
-                        )
-                    except Exception:
-                        pass
+            removed, remaining, empty = await room_manager.remove_participant(
+                participant_id
+            )
+            if remaining:
+                remaining_peer = remaining[0]
+                # Notify the remaining peer that someone left
+                try:
+                    await remaining_peer.websocket.send_json(
+                        {
+                            "type": "participant-left",
+                            "id": participant.id,
+                            "name": participant.name,
+                        }
+                    )
+                except Exception:
+                    pass
             # ensure websocket is closed
             try:
                 await websocket.close()

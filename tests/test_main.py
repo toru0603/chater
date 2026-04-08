@@ -41,7 +41,13 @@ def test_websocket_flow():
             assert matched1["type"] == "participant-joined"
 
             # offer signaling forwarded from ws2 -> ws1
-            ws2.send_json({"type": "offer", "target": joined["participant_id"], "data": {"sdp": "dummy"}})
+            ws2.send_json(
+                {
+                    "type": "offer",
+                    "target": joined["participant_id"],
+                    "data": {"sdp": "dummy"},
+                }
+            )
             sig = ws1.receive_json()
             assert sig["type"] == "signal"
             assert sig["signal_type"] == "offer"
