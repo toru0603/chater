@@ -92,7 +92,64 @@ PY
               f=$(find /tmp/artifact-unpack-$name -type f -name "$wanted" -print -quit || true)
               if [ -n "$f" ]; then cp -f "$f" "ci-artifacts/$wanted" || true; fi
             done
+            # also collect any xml test result files into a raw-xml directory for later parsing
+            mkdir -p ci-artifacts/raw-xml
+            find /tmp/artifact-unpack-$name -type f -name '*.xml' -print | while read -r xf; do
+              bn=$(basename "$xf")
+              if [ "$bn" = "coverage.xml" ]; then continue; fi
+              cp -f "$xf" "ci-artifacts/raw-xml/$bn" || true
+            done
           done
+
+          # If e2e-summary.json missing, try to parse junit/xml result files to create it
+          if [ ! -f ci-artifacts/e2e-summary.json ]; then
+            python - <<'PY'
+import os,xml.etree.ElementTree as ET,json,glob
+
+def parse_junit(path):
+    try:
+        root=ET.parse(path).getroot()
+        # handle testsuites or testsuite
+        if root.tag == 'testsuites':
+            # try aggregated attrs
+            tests=int(root.get('tests') or 0)
+            failures=int(root.get('failures') or 0)
+            errors=int(root.get('errors') or 0)
+            skipped=int(root.get('skipped') or 0)
+        else:
+            tests=int(root.get('tests') or 0)
+            failures=int(root.get('failures') or 0)
+            errors=int(root.get('errors') or 0)
+            skipped=int(root.get('skipped') or 0)
+        passed=tests - failures - errors - skipped
+        return {'tests':tests,'passed':passed,'failures':failures,'errors':errors,'skipped':skipped}
+    except Exception:
+        return None
+
+candidates = []
+# prefer files mentioning e2e
+for p in glob.glob('ci-artifacts/raw-xml/**/*.xml', recursive=True):
+    bn=os.path.basename(p).lower()
+    if 'e2e' in bn or 'playwright' in bn or 'e2e-results' in bn or 'e2e' in p.lower():
+        candidates.append(p)
+# fallback patterns
+if not candidates:
+    for p in glob.glob('ci-artifacts/raw-xml/**/*results*.xml', recursive=True):
+        candidates.append(p)
+if not candidates:
+    for p in glob.glob('ci-artifacts/raw-xml/**/*.xml', recursive=True):
+        candidates.append(p)
+
+for p in candidates:
+    res = parse_junit(p)
+    if res:
+        with open('ci-artifacts/e2e-summary.json','w') as f:
+            json.dump(res,f)
+        print('wrote e2e-summary.json from',p)
+        break
+PY
+          fi
+
           echo "Extracted files:"; ls -lah ci-artifacts || true
 
       - name: Build and post CI summary comment
