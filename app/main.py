@@ -158,13 +158,14 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
         pass
     finally:
         if participant_id:
-            peer_after_remove, empty = await room_manager.remove_participant(
+            removed, remaining, empty = await room_manager.remove_participant(
                 participant_id
             )
-            if peer_after_remove is not None:
+            if remaining:
+                remaining_peer = remaining[0]
                 # Notify the remaining peer that someone left
                 try:
-                    await peer_after_remove.websocket.send_json(
+                    await remaining_peer.websocket.send_json(
                         {
                             "type": "participant-left",
                             "id": participant.id,
