@@ -144,6 +144,26 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                         pass
                 continue
 
+            # audio on/off - notify peers about sender's audio state
+            if message_type == "audio":
+                enabled = bool(message.get("enabled"))
+                participants = await room_manager.get_room_participants(room_code)
+                for p in participants:
+                    if p.id == participant.id:
+                        continue
+                    try:
+                        await p.websocket.send_json(
+                            {
+                                "type": "audio",
+                                "from": participant.id,
+                                "from_name": participant.name,
+                                "enabled": enabled,
+                            }
+                        )
+                    except Exception:
+                        pass
+                continue
+
             if message_type in {"offer", "answer", "candidate"}:
                 # If no explicit target is provided, forward to the peer in the room.
                 target_id = message.get("target")

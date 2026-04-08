@@ -1,6 +1,7 @@
 const joinBtn = document.getElementById("joinBtn");
 const leaveBtn = document.getElementById("leaveBtn");
 const toggleCamBtn = document.getElementById("toggleCameraBtn");
+const toggleAudioBtn = document.getElementById("toggleAudioBtn");
 const statusEl = document.getElementById("status");
 const nameInput = document.getElementById("name");
 const roomCodeInput = document.getElementById("roomCode");
@@ -22,6 +23,8 @@ let ownParticipantId = null;
 let ownName = null;
 
 let cameraEnabled = true;
+
+let audioEnabled = true;
 
 const rtcConfig = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -211,6 +214,7 @@ async function startCall() {
     setStatus('サーバに接続しました');
     joinBtn.disabled = true; leaveBtn.disabled = false;
     if (toggleCamBtn) { toggleCamBtn.disabled = false; toggleCamBtn.textContent = 'カメラOFF'; }
+    if (toggleAudioBtn) { toggleAudioBtn.disabled = false; toggleAudioBtn.textContent = 'マイクOFF'; }
   };
 
   socket.onmessage = async (ev) => {
@@ -321,6 +325,26 @@ async function startCall() {
       return;
     }
 
+    if (message.type === 'audio') {
+      const from = message.from;
+      const enabled = !!message.enabled;
+      const vid = remoteVideos[from];
+      if (vid) {
+        const tile = vid.parentElement;
+        if (tile) {
+          if (!enabled) {
+            vid.muted = true;
+            tile.classList.add('audio-muted');
+          } else {
+            vid.muted = false;
+            tile.classList.remove('audio-muted');
+            try { vid.play(); } catch (e) {}
+          }
+        }
+      }
+      return;
+    }
+
     if (message.type === 'chat') {
       // remember color and show danmaku with colored name
       if (message.color) participantColors[message.from] = message.color;
@@ -332,7 +356,7 @@ async function startCall() {
   };
 
   socket.onclose = () => {
-    joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCamBtn) { toggleCamBtn.disabled = true; toggleCamBtn.textContent = 'カメラOFF'; } setStatus('切断しました');
+    joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCamBtn) { toggleCamBtn.disabled = true; toggleCamBtn.textContent = 'カメラOFF'; } if (toggleAudioBtn) { toggleAudioBtn.disabled = true; toggleAudioBtn.textContent = 'マイクOFF'; } setStatus('切断しました');
   };
 }
 
@@ -344,7 +368,7 @@ function leaveCall() {
   if (socket) { socket.close(); socket = null; }
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
   localVideo.srcObject = null;
-  joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCamBtn) { toggleCamBtn.disabled = true; toggleCamBtn.textContent = 'カメラOFF'; } setStatus('待機中');
+  joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCamBtn) { toggleCamBtn.disabled = true; toggleCamBtn.textContent = 'カメラOFF'; } if (toggleAudioBtn) { toggleAudioBtn.disabled = true; toggleAudioBtn.textContent = 'マイクOFF'; } setStatus('待機中');
 }
 
 joinBtn.addEventListener('click', startCall);
@@ -357,6 +381,16 @@ if (toggleCamBtn) toggleCamBtn.addEventListener('click', () => {
   vids.forEach(t => t.enabled = cameraEnabled);
   send({ type: 'camera', enabled: cameraEnabled });
   toggleCamBtn.textContent = cameraEnabled ? 'カメラOFF' : 'カメラON';
+});
+
+if (toggleAudioBtn) toggleAudioBtn.addEventListener('click', () => {
+  if (!localStream) { setStatus('未接続またはマイク未取得'); return; }
+  const auds = localStream.getAudioTracks();
+  if (!auds || auds.length === 0) { setStatus('マイクが見つかりません'); return; }
+  audioEnabled = !audioEnabled;
+  auds.forEach(t => t.enabled = audioEnabled);
+  send({ type: 'audio', enabled: audioEnabled });
+  toggleAudioBtn.textContent = audioEnabled ? 'マイクOFF' : 'マイクON';
 });
 
 window.addEventListener('beforeunload', () => { if (socket) socket.close(); });
