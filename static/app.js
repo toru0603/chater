@@ -1,3 +1,4 @@
+// Frontend app.js (merged conflict resolution)
 const joinBtn = document.getElementById("joinBtn");
 const leaveBtn = document.getElementById("leaveBtn");
 const toggleCamBtn = document.getElementById("toggleCameraBtn");
@@ -20,8 +21,11 @@ const pendingCandidates = {}; // peerId -> []
 const participantColors = {}; // peerId -> color
 let ownParticipantId = null;
 let ownName = null;
-
 let cameraEnabled = true;
+
+// Debug: surface runtime errors to console for e2e diagnostics (temporary)
+window.addEventListener('error', e => { try { console.error('PAGE ERROR:', e && e.message, e && e.error && e.error.stack); } catch(e) {} });
+window.addEventListener('unhandledrejection', e => { try { console.error('UNHANDLED PROMISE REJECTION:', e && e.reason); } catch(e) {} });
 
 const rtcConfig = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -206,19 +210,17 @@ async function startCall() {
   }
 
   socket = new WebSocket(`ws://${location.host}/ws/${encodeURIComponent(roomCode)}`);
-  socket.onopen = () => {
-    send({ type: 'join', name });
-    setStatus('サーバに接続しました');
-    joinBtn.disabled = true; leaveBtn.disabled = false;
-    if (toggleCamBtn) { toggleCamBtn.disabled = false; toggleCamBtn.textContent = 'カメラOFF'; }
-  };
 
+  // attach onmessage first to avoid missing messages that arrive immediately after open
   socket.onmessage = async (ev) => {
+    // DEBUG: log raw websocket messages for e2e troubleshooting (temporary)
+    try { console.log('WS RECV:', ev.data); } catch(e) {}
+    try { window.__last_ws_message = ev.data; } catch(e) {}
     const message = JSON.parse(ev.data);
+    try { window.__last_ws_message_obj = message; } catch(e) {}
 
     if (message.type === 'waiting') { setStatus(message.message); return; }
     if (message.type === 'joined') {
-      // store own id and color and update local title
       ownParticipantId = message.participant_id;
       ownName = message.name || ownName;
       if (message.color) participantColors[ownParticipantId] = message.color;
@@ -229,15 +231,15 @@ async function startCall() {
           title.textContent = ownName || title.textContent;
           title.style.color = participantColors[ownParticipantId] || title.style.color;
         }
-        // Keep the local tile's data-peer-id stable to avoid selector issues on rejoin
       }
       setStatus(`参加しました: ${message.room_code}`);
-      return; }
+      return;
+    }
 
-    if (message.type === 'matched') {
-      setStatus('相手が見つかりました');
-      const p = message.peer;
-      if (p && p.id) {
+    if (message.type === 'participants' || message.type === 'matched') {
+      setStatus('マッチ成功');
+      const parts = message.participants || [];
+      for (const p of parts) {
         if (p.color) participantColors[p.id] = p.color;
         createRemoteVideoElement(p.id, p.name);
         const tile = document.querySelector(`[data-peer-id="${p.id}"]`);
@@ -249,44 +251,6 @@ async function startCall() {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         send({ type: 'offer', target: p.id, data: pc.localDescription });
-      }
-      return;
-    }
-
-    if (message.type === 'participants') {
-      setStatus('マッチ成功');
-      const parts = message.participants || [];
-      // register colors first so titles get colored
-      for (const p of parts) {
-        if (p.color) participantColors[p.id] = p.color;
-      }
-      // create peer connections and initiate offers to existing participants
-      for (const p of parts) {
-        createRemoteVideoElement(p.id, p.name);
-        const tile = document.querySelector(`[data-peer-id="${p.id}"]`);
-        if (tile) {
-          const title = tile.querySelector('h3');
-          if (title && participantColors[p.id]) title.style.color = participantColors[p.id];
-        }
-        const pc = ensurePeerConnection(p.id);
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        send({ type: 'offer', target: p.id, data: pc.localDescription });
-      }
-      return;
-    }
-
-    if (message.type === 'matched') {
-      setStatus('マッチ成功');
-      const parts = message.participants || [];
-      for (const p of parts) {
-        if (p.color) participantColors[p.id] = p.color;
-        createRemoteVideoElement(p.id, p.name);
-        const tile = document.querySelector(`[data-peer-id="${p.id}"]`);
-        if (tile) {
-          const title = tile.querySelector('h3');
-          if (title && participantColors[p.id]) title.style.color = participantColors[p.id];
-        }
       }
       return;
     }
@@ -318,7 +282,6 @@ async function startCall() {
     if (message.type === 'participant-left') {
       setStatus(`${message.name} が退出しました`);
       removeRemoteVideoElement(message.id);
-      // close pc if exists
       if (peers[message.id]) { try { peers[message.id].close(); } catch(e){} delete peers[message.id]; }
       return;
     }
@@ -344,13 +307,19 @@ async function startCall() {
     }
 
     if (message.type === 'chat') {
-      // remember color and show danmaku with colored name
       if (message.color) participantColors[message.from] = message.color;
       addDanmaku(message.from, message.from_name || '匿名', message.text || '', message.color || participantColors[message.from]);
       return;
     }
 
     if (message.type === 'error') { setStatus(message.message); }
+  };
+
+  socket.onopen = () => {
+    send({ type: 'join', name });
+    setStatus('サーバに接続しました');
+    joinBtn.disabled = true; leaveBtn.disabled = false;
+    if (toggleCamBtn) { toggleCamBtn.disabled = false; toggleCamBtn.textContent = 'カメラOFF'; }
   };
 
   socket.onclose = () => {

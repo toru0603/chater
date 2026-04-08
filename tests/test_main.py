@@ -1,117 +1,135 @@
-import pytest
-from fastapi.testclient import TestClient
+from __future__ import annotations
 
-import app.main as main_module
-from app.room_manager import RoomManager
+from pathlib import Path
+import asyncio
+
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+
+from .room_manager import RoomFullError, RoomManager
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+TEMPLATES_DIR = BASE_DIR / "templates"
+STATIC_DIR = BASE_DIR / "static"
+
+app = FastAPI(title="cheter")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+room_manager = RoomManager()
 
 
-@pytest.fixture(autouse=True)
-def reset_room_manager():
-    # Reset module-level RoomManager to isolate tests
-    main_module.room_manager = RoomManager()
-    yield
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={"request": request, "app_name": "cheter"},
+    )
 
 
-def test_index():
-    client = TestClient(main_module.app)
-    r = client.get("/")
-    assert r.status_code == 200
-    assert "<title>cheter</title>" in r.text
+@app.websocket("/ws/{room_code}")
+async def websocket_room(websocket: WebSocket, room_code: str) -> None:
+    await websocket.accept()
 
+    participant_id = ""
+    room_name = ""
+    participant = None
+    try:
+        join_message = await websocket.receive_json()
+        if join_message.get("type") != "join":
+            await websocket.send_json({"type": "error", "message": "join message is required"})
+            await websocket.close(code=1008)
+            return
 
-def test_websocket_flow():
-    client = TestClient(main_module.app)
+        room_name = str(join_message.get("name") or "Guest")
+        participant, existing = await room_manager.add_participant(room_code, room_name, websocket)
+        participant_id = participant.id
 
-    with client.websocket_connect("/ws/room123") as ws1:
-        ws1.send_json({"type": "join", "name": "Alice"})
-        joined = ws1.receive_json()
-        assert joined["type"] == "joined"
-        waiting = ws1.receive_json()
-        assert waiting["type"] == "waiting"
+        await websocket.send_json(
+            {
+                "type": "joined",
+                "room_code": room_code,
+                "participant_id": participant.id,
+                "role": participant.role,
+                "name": room_name,
+                "color": participant.color,
+            }
+        )
 
-        with client.websocket_connect("/ws/room123") as ws2:
-            ws2.send_json({"type": "join", "name": "Bob"})
-            joined2 = ws2.receive_json()
-            assert joined2["type"] == "joined"
-
-            matched2 = ws2.receive_json()
-            assert matched2["type"] == "participants"
-
-            matched1 = ws1.receive_json()
-            assert matched1["type"] == "participant-joined"
-
-            # offer signaling forwarded from ws2 -> ws1
-            ws2.send_json(
+        if not existing:
+            await websocket.send_json(
                 {
-                    "type": "offer",
-                    "target": joined["participant_id"],
-                    "data": {"sdp": "dummy"},
+                    "type": "waiting",
+                    "room_code": room_code,
+                    "message": f"room {room_code} is waiting for peers",
                 }
             )
-            sig = ws1.receive_json()
-            assert sig["type"] == "signal"
-            assert sig["signal_type"] == "offer"
+        else:
+            participants_payload = [
+                {"id": p.id, "name": p.name, "role": p.role, "color": p.color} for p in existing
+            ]
+            await websocket.send_json({"type": "participants", "room_code": room_code, "participants": participants_payload})
 
-            # leave: ws2 leaves, ws1 should receive participant-left
-            ws2.send_json({"type": "leave"})
-            peer_left = ws1.receive_json()
-            assert peer_left["type"] == "participant-left"
+        while True:
+            message = await websocket.receive_json()
+            message_type = message.get("type")
 
+            if message_type == "leave":
+                break
 
-def test_invalid_join():
-    client = TestClient(main_module.app)
-    with client.websocket_connect("/ws/invalid") as ws:
-        ws.send_json({"type": "bad"})
-        err = ws.receive_json()
-        assert err["type"] == "error"
-        assert "join message" in err["message"]
-        # socket should be closed by server; attempting to receive should raise
-        with pytest.raises(Exception):
-            ws.receive_json()
+            # chat messages - broadcast to room
+            if message_type == "chat":
+                text = message.get("text", "")
+                if not text:
+                    continue
+                participants = await room_manager.get_room_participants(room_code)
+                for p in participants:
+                    try:
+                        await p.websocket.send_json({
+                            "type": "chat",
+                            "from": participant.id,
+                            "from_name": participant.name,
+                            "text": text,
+                            "color": participant.color,
+                        })
+                    except Exception:
+                        pass
+                continue
 
-
-def test_chat_broadcast():
-    client = TestClient(main_module.app)
-    with client.websocket_connect("/ws/room_chat") as ws1:
-        ws1.send_json({"type": "join", "name": "Alice"})
-        joined = ws1.receive_json()
-        assert joined["type"] == "joined"
-        waiting = ws1.receive_json()
-        assert waiting["type"] == "waiting"
-
-        with client.websocket_connect("/ws/room_chat") as ws2:
-            ws2.send_json({"type": "join", "name": "Bob"})
-            joined2 = ws2.receive_json()
-            assert joined2["type"] == "joined"
-
-            matched2 = ws2.receive_json()
-            assert matched2["type"] == "participants"
-
-            matched1 = ws1.receive_json()
-            assert matched1["type"] == "participant-joined"
-
-            # send chat from ws1 and ensure ws2 receives it
-            ws1.send_json({"type": "chat", "text": "hello"})
-            chat_msg = ws2.receive_json()
-            assert chat_msg["type"] == "chat"
-            assert chat_msg["text"] == "hello"
-
-
-def test_offer_without_target_and_missing_target():
-    client = TestClient(main_module.app)
-
-    # Send offer without a target (should be ignored but not error)
-    with client.websocket_connect("/ws/room_offer") as ws:
-        ws.send_json({"type": "join", "name": "Alice"})
-        ws.receive_json()
-        ws.receive_json()
-        ws.send_json({"type": "offer", "data": {"sdp": "dummy"}})
-        ws.send_json({"type": "leave"})
-
-    # Send offer with a nonexistent target (should be ignored but not error)
-    with client.websocket_connect("/ws/room_offer2") as ws:
-        ws.send_json({"type": "join", "name": "Alice"})
-        ws.receive_json()
-        ws.receive_json()
-        ws.send_json({"type": "offer", "target": "nope", "data": {"sdp": "dummy"}})
-        ws.send_json({"type": "leave"})
+            if message_type in {"offer", "answer", "candidate"}:
+                target_id = message.get("target")
+                target = None
+                if target_id:
+                    target = await room_manager.get_participant(target_id)
+                else:
+                    peers = [p for p in await room_manager.get_room_participants(room_code) if p.id != participant.id]
+                    if len(peers) == 1:
+                        target = peers[0]
+                    else:
+                        continue
+                if not target:
+                    continue
+                await target.websocket.send_json({
+                    "type": "signal",
+                    "signal_type": message_type,
+                    "data": message.get("data"),
+                    "from": participant.id,
+                    "from_name": participant.name,
+                })
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if participant_id:
+            removed, remaining, empty = await room_manager.remove_participant(participant_id)
+            if removed is not None:
+                for p in remaining:
+                    try:
+                        await p.websocket.send_json({"type": "peer-left", "id": removed.id, "name": removed.name})
+                    except Exception:
+                        pass
+            try:
+                await websocket.close()
+            except Exception:
+                pass

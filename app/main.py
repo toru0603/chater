@@ -74,7 +74,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
             ]
             new_participant_payload = {"id": participant.id, "name": participant.name, "role": participant.role, "color": participant.color}
 
-            # Send 'participants' to existing peers and the list of existing to the new participant concurrently
+            # Send 'participants' to existing peers and to the new participant concurrently
             try:
                 tasks = []
                 for p in existing:
@@ -85,7 +85,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                     }
                     if os.environ.get('DEBUG_E2E'):
                         print(f"SERVER DEBUG: queue participants to existing {p.id} about {participant.id}")
-                    tasks.append(p.websocket.send_json(payload))
+                    tasks.append(asyncio.create_task(p.websocket.send_json(payload)))
 
                 new_payload = {
                     "type": "participants",
@@ -94,9 +94,9 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                 }
                 if os.environ.get('DEBUG_E2E'):
                     print(f"SERVER DEBUG: queue participants to new participant {participant.id} participants: {[p.id for p in existing]}")
-                tasks.append(websocket.send_json(new_payload))
+                tasks.append(asyncio.create_task(websocket.send_json(new_payload)))
 
-                results = await asyncio.gather(*[asyncio.create_task(t) for t in tasks], return_exceptions=True)
+                results = await asyncio.gather(*tasks, return_exceptions=True)
                 if os.environ.get('DEBUG_E2E'):
                     print(f"SERVER DEBUG: participants send results: {results}")
             except Exception:
@@ -114,7 +114,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                     }
                     if os.environ.get('DEBUG_E2E'):
                         print(f"SERVER DEBUG: queue matched to existing {p.id} about {participant.id}")
-                    tasks.append(p.websocket.send_json(payload))
+                    tasks.append(asyncio.create_task(p.websocket.send_json(payload)))
 
                 new_payload = {
                     "type": "matched",
@@ -123,9 +123,9 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                 }
                 if os.environ.get('DEBUG_E2E'):
                     print(f"SERVER DEBUG: queue matched to new participant {participant.id} participants: {[p.id for p in existing]}")
-                tasks.append(websocket.send_json(new_payload))
+                tasks.append(asyncio.create_task(websocket.send_json(new_payload)))
 
-                results = await asyncio.gather(*[asyncio.create_task(t) for t in tasks], return_exceptions=True)
+                results = await asyncio.gather(*tasks, return_exceptions=True)
                 if os.environ.get('DEBUG_E2E'):
                     print(f"SERVER DEBUG: matched send results: {results}")
             except Exception:
