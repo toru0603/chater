@@ -9,7 +9,7 @@
 
 ## 開発環境
 
-前提: Python 3.8+
+前提: Python 3.10+
 
 ```bash
 python -m venv .venv

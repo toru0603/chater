@@ -8,8 +8,8 @@ from typing import Dict, List, Optional, Tuple
 
 from fastapi import WebSocket
 
-# Tests expect rooms to be pairwise (host + guest)
-MAX_PARTICIPANTS = 2
+# Maximum participants per room (default 10)
+MAX_PARTICIPANTS = 10
 
 DEFAULT_COLORS = [
     "#e11d48",
