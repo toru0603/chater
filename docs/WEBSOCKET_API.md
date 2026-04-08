@@ -26,7 +26,7 @@
 2. サーバ -> クライアント
 
 - joined
-  - 形式: {"type": "joined", "room_code": "...", "participant_id": "...", "role": "host|participant", "name": "...", "color": "#rrggbb"}
+  - 形式: {"type": "joined", "room_code": "...", "participant_id": "...", "role": "host|guest", "name": "...", "color": "#rrggbb"}
   - 備考: join 成功時に送られる。`color` は任意フィールドで、参加者に割り当てられた表示色です。
 
 
