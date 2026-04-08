@@ -155,7 +155,7 @@ jobs:
 
       - name: Run E2E tests
         run: |
-          pytest --maxfail=1 --disable-warnings -q tests/e2e -k test_browser_playwright --junitxml=e2e-results.xml
+          pytest --maxfail=1 --disable-warnings -q tests/e2e --junitxml=e2e-results.xml
 
       - name: Create e2e test summary
         if: always()
