@@ -215,9 +215,7 @@ async function startCall() {
   socket.onmessage = async (ev) => {
     // DEBUG: log raw websocket messages for e2e troubleshooting (temporary)
     try { console.log('WS RECV:', ev.data); } catch(e) {}
-    try { window.__last_ws_message = ev.data; } catch(e) {}
     const message = JSON.parse(ev.data);
-    try { window.__last_ws_message_obj = message; } catch(e) {}
 
     if (message.type === 'waiting') { setStatus(message.message); return; }
     if (message.type === 'joined') {

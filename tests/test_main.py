@@ -33,9 +33,13 @@ def test_join_wait_and_match():
             matched1 = ws1.receive_json()
             assert matched1["type"] in ("participant-joined", "participants", "matched")
 
-            # send chat and ensure broadcast
+            # send chat and ensure broadcast; skip intermediate matched/participants
             ws1.send_json({"type": "chat", "text": "hello"})
-            chat_msg = ws2.receive_json()
+            while True:
+                chat_msg = ws2.receive_json()
+                if chat_msg.get("type") in {"participants", "matched"}:
+                    continue
+                break
             assert chat_msg["type"] == "chat"
             assert chat_msg["text"] == "hello"
 
@@ -71,13 +75,22 @@ def test_offer_forwarding_and_peer_left():
             # send offer from ws2 to ws1 using explicit target id
             ws2.send_json({"type": "offer", "target": joined1.get("participant_id"), "data": {"sdp": "dummy"}})
 
-            # ws1 should receive a 'signal' message
-            sig = ws1.receive_json()
+            # ws1 should receive a 'signal' message (skip matched/participants)
+            while True:
+                sig = ws1.receive_json()
+                if sig.get("type") in {"participants", "matched"}:
+                    continue
+                break
+
             assert sig["type"] == "signal"
             assert sig["signal_type"] == "offer"
 
             # ws2 leaves, ws1 should receive peer-left/participant-left
             ws2.send_json({"type": "leave"})
-            peer_left = ws1.receive_json()
+            while True:
+                peer_left = ws1.receive_json()
+                if peer_left.get("type") in {"participants", "matched"}:
+                    continue
+                break
             assert peer_left["type"] in ("peer-left", "participant-left")
 
