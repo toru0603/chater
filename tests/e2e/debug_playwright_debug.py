@@ -37,7 +37,7 @@ if __name__ == '__main__':
                 '--use-fake-device-for-media-stream',
                 '--use-fake-ui-for-media-stream',
             ]
-            browser = p.chromium.launch(headless=True, args=launch_args)
+            browser = p.chromium.launch(headless=False, args=launch_args)
             init_script = r"""
             window.RTCPeerConnection = class {
               constructor(){
