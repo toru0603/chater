@@ -51,6 +51,14 @@
   - 形式: {"type": "signal", "signal_type": "offer|answer|candidate", "data": {...}, "from": "<sender_id>", "from_name": "<sender_name>"}
   - 備考: サーバがターゲット参加者へ転送するメッセージ
 
+- camera
+  - 形式: {"type": "camera", "from": "<id>", "from_name": "<name>", "enabled": true|false}
+  - 備考: 送信者のカメラ表示状態を他の参加者へ通知します（送信者自身へは再送しません）。
+
+- audio
+  - 形式: {"type": "audio", "from": "<id>", "from_name": "<name>", "enabled": true|false}
+  - 備考: 送信者のマイク（音声）オン/オフ状態を他の参加者へ通知します（送信者自身へは再送しません）。
+
 ## 実装メモ
 
 - サーバは最初の参加者を `host` として割り当てる
