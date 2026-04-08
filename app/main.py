@@ -231,3 +231,4 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                 await websocket.close()
             except Exception:
                 pass
+
