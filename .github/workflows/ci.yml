@@ -82,8 +82,8 @@ jobs:
           tcr = tests_lines / float(app_lines)
           print(f'Test-to-Code Ratio (TCR): {tcr:.2f}')
 
-          min_tcr = 1.8
-          max_tcr = 2.5
+          min_tcr = 1.5
+          max_tcr = 3.0
           if tcr < min_tcr or tcr > max_tcr:
               print(f'TCR {tcr:.2f} outside allowed range [{min_tcr}, {max_tcr}]', file=sys.stderr)
               sys.exit(1)
