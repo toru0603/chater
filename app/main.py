@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .room_manager import RoomFullError, RoomManager
+from .room_manager import RoomManager, RoomFullError
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = BASE_DIR / "templates"
@@ -74,7 +74,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
             ]
             new_participant_payload = {"id": participant.id, "name": participant.name, "role": participant.role, "color": participant.color}
 
-            # Send 'participants' to existing peers and to the new participant concurrently
+            # Send 'participants' to existing peers and the list of existing to the new participant concurrently
             try:
                 tasks = []
                 for p in existing:

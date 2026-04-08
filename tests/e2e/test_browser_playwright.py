@@ -71,7 +71,6 @@ def server():
             proc.kill()
 
 
-@pytest.mark.skip("flaky in CI: skipping for now")
 def test_browser_playwright_match_and_leave(server):
     """Open two browser pages, join the same room, verify match and peer-left behavior."""
     with sync_playwright() as p:
