@@ -52,6 +52,10 @@ jobs:
               const name = r.name || r.external_id || 'Unnamed check';
               const url = r.html_url || `https://github.com/${owner}/${repo}/commit/${checkSuite.head_sha}/checks`;
               summary += `| [${name}](${url}) | ${status} |\n`;
+              if (r.output && r.output.summary) {
+                // include check run summary in a collapsible section
+                summary += `\n<details><summary>Details: ${name}</summary>\n\n${r.output.summary}\n\n</details>\n`;
+              }
             }
 
             summary += `\nView full details: https://github.com/${owner}/${repo}/commit/${checkSuite.head_sha}/checks\n\n_This comment is posted automatically._`;

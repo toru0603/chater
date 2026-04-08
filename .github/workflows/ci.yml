@@ -30,7 +30,7 @@ jobs:
 
       - name: Run unit tests with coverage
         run: |
-          pytest --maxfail=1 --disable-warnings --cov=app --cov-branch --cov-report=xml
+          pytest --maxfail=1 --disable-warnings --cov=app --cov-branch --cov-report=xml --junitxml=unit-results.xml
 
       - name: Check coverage thresholds
         run: |
@@ -46,6 +46,74 @@ jobs:
               print('Coverage thresholds not met', file=sys.stderr)
               sys.exit(1)
           PY
+
+      - name: Create unit test summary
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET, json, sys, os
+          junit='unit-results.xml'
+          cov='coverage.xml'
+          summary={}
+          if os.path.exists(junit):
+              try:
+                  root=ET.parse(junit).getroot()
+                  tests=int(root.get('tests') or 0)
+                  failures=int(root.get('failures') or 0)
+                  errors=int(root.get('errors') or 0)
+                  skipped=int(root.get('skipped') or 0)
+                  passed = tests - failures - errors - skipped
+                  summary.update({'tests':tests,'passed':passed,'failures':failures,'errors':errors,'skipped':skipped})
+              except Exception as e:
+                  summary['tests_summary_error']=str(e)
+          else:
+              summary['tests']='missing'
+          if os.path.exists(cov):
+              try:
+                  cr=ET.parse(cov).getroot()
+                  pkg=cr.find('packages').find('package')
+                  line_rate=float(pkg.get('line-rate'))*100
+                  branch_rate=float(pkg.get('branch-rate'))*100
+                  summary.update({'coverage_line':round(line_rate,1),'coverage_branch':round(branch_rate,1)})
+              except Exception as e:
+                  summary['coverage_error']=str(e)
+          with open('unit-summary.json','w') as f:
+              json.dump(summary,f)
+          PY
+
+      - name: Post unit test summary as check run output
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const owner=github.context.repo.owner;
+            const repo=github.context.repo.repo;
+            const sha=process.env.GITHUB_SHA || github.context.sha;
+            let md='### Unit Tests summary\n';
+            try {
+              const s=JSON.parse(fs.readFileSync('unit-summary.json','utf8'));
+              if (s.tests && s.passed!==undefined) {
+                md += `Passed: **${s.passed}/${s.tests}**\n\n`;
+              } else if (s.tests==='missing') {
+                md += 'Unit test results missing\n\n';
+              }
+              if (s.coverage_line) md += `Line coverage: **${s.coverage_line}%**, Branch coverage: **${s.coverage_branch}%**\n\n`;
+            } catch (e) {
+              md += 'Failed to parse unit-summary.json\n';
+            }
+            const runs = await github.rest.checks.listForRef({owner,repo,ref:sha});
+            const unitRun = runs.data.check_runs.find(r=>r.name==='Unit Tests');
+            if (unitRun) {
+              await github.rest.checks.update({owner,repo,check_run_id: unitRun.id, output:{title:'Unit Tests summary', summary: md}});
+            } else {
+              core.info('Unit Tests run not found; skipping check run update.');
+            }
+
+      - name: Upload unit summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-summary
+          path: unit-summary.json
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
@@ -80,7 +148,51 @@ jobs:
 
       - name: Run E2E tests
         run: |
-          pytest --maxfail=1 --disable-warnings -q tests/e2e -k test_browser_playwright
+          pytest --maxfail=1 --disable-warnings -q tests/e2e -k test_browser_playwright --junitxml=e2e-results.xml
+
+      - name: Create e2e test summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET, json, os
+          path='e2e-results.xml'
+          summary={}
+          if os.path.exists(path):
+              try:
+                  root=ET.parse(path).getroot()
+                  tests=int(root.get('tests') or 0)
+                  failures=int(root.get('failures') or 0)
+                  errors=int(root.get('errors') or 0)
+                  skipped=int(root.get('skipped') or 0)
+                  passed = tests - failures - errors - skipped
+                  summary.update({'tests':tests,'passed':passed,'failures':failures,'errors':errors,'skipped':skipped})
+              except Exception as e:
+                  summary['tests_summary_error']=str(e)
+          else:
+              summary['tests']='missing'
+          with open('e2e-summary.json','w') as f:
+              json.dump(summary,f)
+          PY
+
+      - name: Post e2e test summary as check run output
+        if: always()
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const owner=github.context.repo.owner;
+            const repo=github.context.repo.repo;
+            const sha=process.env.GITHUB_SHA || github.context.sha;
+            let md='### E2E Tests summary\n';
+            try {
+              const s=JSON.parse(fs.readFileSync('e2e-summary.json','utf8'));
+              if (s.tests && s.passed!==undefined) md+=`Passed: **${s.passed}/${s.tests}**\n\n`;
+              else if (s.tests==='missing') md+='E2E test results missing\n\n';
+            } catch(e) { md+='Failed to parse e2e-summary.json\n'; }
+            const runs = await github.rest.checks.listForRef({owner,repo,ref:sha});
+            const e2eRun = runs.data.check_runs.find(r=>r.name==='E2E Tests (Playwright)');
+            if (e2eRun) { await github.rest.checks.update({owner,repo,check_run_id: e2eRun.id, output:{title:'E2E Tests summary',summary:md}}); } else { core.info('E2E run not found'); }
 
       - name: Upload E2E artifacts
         if: always()
@@ -88,6 +200,7 @@ jobs:
         with:
           name: e2e-artifacts
           path: |
+            e2e-summary.json
             /tmp/playwright-trace-*.zip
             /tmp/e2e-page1-*.png
             /tmp/e2e-page2-*.png
