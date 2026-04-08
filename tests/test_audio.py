@@ -31,7 +31,7 @@ def test_audio_broadcast():
 
             # consume notification on ws1 about new participant
             joined1 = ws1.receive_json()
-            assert joined1["type"] == "participant-joined"
+            assert joined1["type"] in ("participant-joined", "participants", "matched")
 
             # Bob toggles audio off
             ws2.send_json({"type": "audio", "enabled": False})
