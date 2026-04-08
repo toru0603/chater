@@ -7,8 +7,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .room_manager import RoomFullError, RoomManager
-
+from .room_manager import RoomManager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = BASE_DIR / "templates"
@@ -38,12 +37,16 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
     try:
         join_message = await websocket.receive_json()
         if join_message.get("type") != "join":
-            await websocket.send_json({"type": "error", "message": "join message is required"})
+            await websocket.send_json(
+                {"type": "error", "message": "join message is required"}
+            )
             await websocket.close(code=1008)
             return
 
         room_name = str(join_message.get("name") or "Guest")
-        participant, existing = await room_manager.add_participant(room_code, room_name, websocket)
+        participant, existing = await room_manager.add_participant(
+            room_code, room_name, websocket
+        )
         participant_id = participant.id
 
         await websocket.send_json(
@@ -72,7 +75,8 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                     "type": "participants",
                     "room_code": room_code,
                     "participants": [
-                        {"id": p.id, "name": p.name, "role": p.role, "color": p.color} for p in existing
+                        {"id": p.id, "name": p.name, "role": p.role, "color": p.color}
+                        for p in existing
                     ],
                 }
             )
@@ -139,13 +143,19 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
         pass
     finally:
         if participant_id:
-            removed, remaining, empty = await room_manager.remove_participant(participant_id)
+            removed, remaining, empty = await room_manager.remove_participant(
+                participant_id
+            )
             if removed is not None:
                 # Notify remaining participants that someone left
                 for p in remaining:
                     try:
                         await p.websocket.send_json(
-                            {"type": "participant-left", "id": removed.id, "name": removed.name}
+                            {
+                                "type": "participant-left",
+                                "id": removed.id,
+                                "name": removed.name,
+                            }
                         )
                     except Exception:
                         pass

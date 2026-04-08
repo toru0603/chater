@@ -4,10 +4,9 @@ import asyncio
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict
+from typing import Dict, List, Optional
 
 from fastapi import WebSocket
-
 
 MAX_PARTICIPANTS = 10
 
@@ -57,7 +56,9 @@ class RoomManager:
         self._rooms: Dict[str, Room] = {}
         self._lock = asyncio.Lock()
 
-    async def add_participant(self, room_code: str, name: str, websocket: WebSocket) -> tuple[Participant, List[Participant]]:
+    async def add_participant(
+        self, room_code: str, name: str, websocket: WebSocket
+    ) -> tuple[Participant, List[Participant]]:
         async with self._lock:
             room = self._rooms.setdefault(room_code, Room(code=room_code))
             if len(room.participants) >= MAX_PARTICIPANTS:
@@ -78,9 +79,18 @@ class RoomManager:
             room.participants[participant.id] = participant
             return participant, existing
 
-    async def remove_participant(self, participant_id: str) -> tuple[Optional[Participant], List[Participant], bool]:
+    async def remove_participant(
+        self, participant_id: str
+    ) -> tuple[Optional[Participant], List[Participant], bool]:
         async with self._lock:
-            room = next((room for room in self._rooms.values() if participant_id in room.participants), None)
+            room = next(
+                (
+                    room
+                    for room in self._rooms.values()
+                    if participant_id in room.participants
+                ),
+                None,
+            )
             if room is None:
                 return None, [], False
 

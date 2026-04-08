@@ -1,11 +1,13 @@
 import asyncio
+
 import pytest
 
-from app.room_manager import RoomManager, RoomFullError
+from app.room_manager import RoomFullError, RoomManager
 
 
 class DummyWebSocket:
     """Lightweight stand-in for FastAPI WebSocket in RoomManager tests."""
+
     pass
 
 
