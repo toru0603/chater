@@ -133,8 +133,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: unit-tests
     timeout-minutes: 30
-    env:
-      PYTHONPATH: ${{ github.workspace }}
 
     steps:
       - name: Checkout
@@ -158,17 +156,6 @@ jobs:
       - name: Run E2E tests
         run: |
           pytest --maxfail=1 --disable-warnings -q tests/e2e --junitxml=e2e-results.xml
-
-      - name: Debug E2E environment
-        if: always()
-        run: |
-          set -eux
-          echo "PWD: $(pwd)"
-          ls -la
-          python -c "import os,sys; print('PYTHONPATH=', os.environ.get('PYTHONPATH'))"
-          pytest --collect-only -q tests/e2e || true
-          if [ -f e2e-results.xml ]; then echo 'e2e-results.xml exists'; ls -l e2e-results.xml; else echo 'e2e-results.xml missing'; fi
-          cat e2e-results.xml || true
 
       - name: Create e2e test summary
         if: always()
@@ -222,13 +209,6 @@ jobs:
           find "$GITHUB_WORKSPACE" -type f -name 'e2e-results.xml' -exec cp {} "$GITHUB_WORKSPACE/e2e-results.xml" \; || true
           # Ensure e2e-summary.json exists (created earlier or create placeholder)
           if [ ! -f e2e-summary.json ]; then echo '{"tests":"missing"}' > e2e-summary.json; fi
-          # If e2e-results.xml is still missing, create a minimal placeholder so post-ci-summary sees a junit file
-          if [ ! -f e2e-results.xml ]; then
-            cat > e2e-results.xml <<'XML'
-<?xml version="1.0" encoding="utf-8"?>
-<testsuite tests="0" failures="0" errors="0" skipped="0"></testsuite>
-XML
-          fi
 
       - name: Upload E2E artifacts
         if: always()
