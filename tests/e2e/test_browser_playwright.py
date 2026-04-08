@@ -128,8 +128,8 @@ def test_browser_playwright_match_and_leave(server):
         context.tracing.start(screenshots=True, snapshots=True)
         context.add_init_script(init_script)
 
-        # Page 1: Alice
-        page1 = context.new_page()
+        if os.environ.get("DEBUG_E2E"):
+            page1.on("console", _p1_console)
         # capture console logs from the page to help debugging message delivery
         def _p1_console(msg):
             try:
