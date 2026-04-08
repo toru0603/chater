@@ -35,21 +35,21 @@ def test_websocket_flow():
             assert joined2["type"] == "joined"
 
             matched2 = ws2.receive_json()
-            assert matched2["type"] == "matched"
+            assert matched2["type"] == "participants"
 
             matched1 = ws1.receive_json()
-            assert matched1["type"] == "matched"
+            assert matched1["type"] == "participant-joined"
 
             # offer signaling forwarded from ws2 -> ws1
-            ws2.send_json({"type": "offer", "data": {"sdp": "dummy"}})
+            ws2.send_json({"type": "offer", "target": joined["participant_id"], "data": {"sdp": "dummy"}})
             sig = ws1.receive_json()
             assert sig["type"] == "signal"
             assert sig["signal_type"] == "offer"
 
-            # leave: ws2 leaves, ws1 should receive peer-left
+            # leave: ws2 leaves, ws1 should receive participant-left
             ws2.send_json({"type": "leave"})
             peer_left = ws1.receive_json()
-            assert peer_left["type"] == "peer-left"
+            assert peer_left["type"] == "participant-left"
 
 
 def test_invalid_join():
@@ -62,3 +62,50 @@ def test_invalid_join():
         # socket should be closed by server; attempting to receive should raise
         with pytest.raises(Exception):
             ws.receive_json()
+
+
+def test_chat_broadcast():
+    client = TestClient(main_module.app)
+    with client.websocket_connect("/ws/room_chat") as ws1:
+        ws1.send_json({"type": "join", "name": "Alice"})
+        joined = ws1.receive_json()
+        assert joined["type"] == "joined"
+        waiting = ws1.receive_json()
+        assert waiting["type"] == "waiting"
+
+        with client.websocket_connect("/ws/room_chat") as ws2:
+            ws2.send_json({"type": "join", "name": "Bob"})
+            joined2 = ws2.receive_json()
+            assert joined2["type"] == "joined"
+
+            matched2 = ws2.receive_json()
+            assert matched2["type"] == "participants"
+
+            matched1 = ws1.receive_json()
+            assert matched1["type"] == "participant-joined"
+
+            # send chat from ws1 and ensure ws2 receives it
+            ws1.send_json({"type": "chat", "text": "hello"})
+            chat_msg = ws2.receive_json()
+            assert chat_msg["type"] == "chat"
+            assert chat_msg["text"] == "hello"
+
+
+def test_offer_without_target_and_missing_target():
+    client = TestClient(main_module.app)
+
+    # Send offer without a target (should be ignored but not error)
+    with client.websocket_connect("/ws/room_offer") as ws:
+        ws.send_json({"type": "join", "name": "Alice"})
+        ws.receive_json()
+        ws.receive_json()
+        ws.send_json({"type": "offer", "data": {"sdp": "dummy"}})
+        ws.send_json({"type": "leave"})
+
+    # Send offer with a nonexistent target (should be ignored but not error)
+    with client.websocket_connect("/ws/room_offer2") as ws:
+        ws.send_json({"type": "join", "name": "Alice"})
+        ws.receive_json()
+        ws.receive_json()
+        ws.send_json({"type": "offer", "target": "nope", "data": {"sdp": "dummy"}})
+        ws.send_json({"type": "leave"})
