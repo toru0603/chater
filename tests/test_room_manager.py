@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 
-from app.room_manager import RoomManager, RoomFullError
+from app.room_manager import RoomManager, RoomFullError, MAX_PARTICIPANTS
 
 
 class DummyWebSocket:
@@ -49,15 +49,16 @@ def test_add_get_remove_peer():
 
 def test_room_full_error():
     manager = RoomManager()
-    ws1 = DummyWebSocket()
-    ws2 = DummyWebSocket()
-    ws3 = DummyWebSocket()
+    # create dummy websockets equal to MAX_PARTICIPANTS + 1
+    ws_list = [DummyWebSocket() for _ in range(MAX_PARTICIPANTS + 1)]
 
-    asyncio.run(manager.add_participant("room2", "A", ws1))
-    asyncio.run(manager.add_participant("room2", "B", ws2))
+    # fill the room to capacity
+    for i in range(MAX_PARTICIPANTS):
+        asyncio.run(manager.add_participant("room2", f"P{i}", ws_list[i]))
 
+    # adding one more should raise RoomFullError
     with pytest.raises(RoomFullError):
-        asyncio.run(manager.add_participant("room2", "C", ws3))
+        asyncio.run(manager.add_participant("room2", "overflow", ws_list[MAX_PARTICIPANTS]))
 
 
 def test_get_peer_none_when_not_found():

@@ -9,8 +9,8 @@ from typing import Optional, List, Dict
 from fastapi import WebSocket
 
 
-# Reduce max participants for simple 1:1 matching used by tests
-MAX_PARTICIPANTS = 2
+# Maximum participants per room (default 10). Can be adjusted for testing via env var if needed.
+MAX_PARTICIPANTS = 10
 
 DEFAULT_COLORS = [
     "#e11d48",
