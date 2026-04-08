@@ -11,6 +11,19 @@ from fastapi import WebSocket
 
 MAX_PARTICIPANTS = 10
 
+DEFAULT_COLORS = [
+    "#e11d48",
+    "#f97316",
+    "#f59e0b",
+    "#10b981",
+    "#06b6d4",
+    "#3b82f6",
+    "#8b5cf6",
+    "#ec4899",
+    "#6366f1",
+    "#14b8a6",
+]
+
 
 class RoomFullError(Exception):
     pass
@@ -22,6 +35,7 @@ class Participant:
     name: str
     room_code: str
     role: str
+    color: str
     websocket: WebSocket
     joined_at: float = field(default_factory=time.time)
 
@@ -50,11 +64,14 @@ class RoomManager:
                 raise RoomFullError(room_code)
 
             role = "host" if not room.participants else "participant"
+            pid = uuid.uuid4().hex
+            color = DEFAULT_COLORS[int(pid[:8], 16) % len(DEFAULT_COLORS)]
             participant = Participant(
-                id=uuid.uuid4().hex,
+                id=pid,
                 name=name,
                 room_code=room_code,
                 role=role,
+                color=color,
                 websocket=websocket,
             )
             existing = list(room.participants.values())

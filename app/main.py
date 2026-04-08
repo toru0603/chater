@@ -53,6 +53,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                 "participant_id": participant.id,
                 "role": participant.role,
                 "name": room_name,
+                "color": participant.color,
             }
         )
 
@@ -71,7 +72,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                     "type": "participants",
                     "room_code": room_code,
                     "participants": [
-                        {"id": p.id, "name": p.name, "role": p.role} for p in existing
+                        {"id": p.id, "name": p.name, "role": p.role, "color": p.color} for p in existing
                     ],
                 }
             )
@@ -84,6 +85,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                             "id": participant.id,
                             "name": participant.name,
                             "role": participant.role,
+                            "color": participant.color,
                         }
                     )
                 except Exception:
@@ -110,6 +112,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                                 "from": participant.id,
                                 "from_name": participant.name,
                                 "text": text,
+                                "color": participant.color,
                             }
                         )
                     except Exception:
