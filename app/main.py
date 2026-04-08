@@ -44,7 +44,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
             return
 
         room_name = str(join_message.get("name") or "Guest")
-        participant, peer = await room_manager.add_participant(
+        participant, existing = await room_manager.add_participant(
             room_code, room_name, websocket
         )
         participant_id = participant.id
@@ -60,7 +60,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
             }
         )
 
-        if not peer:
+        if not existing:
             await websocket.send_json(
                 {
                     "type": "waiting",
@@ -69,6 +69,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                 }
             )
         else:
+            peer = existing[0]
             # Send participants to the new participant and notify the existing peer
             participants_payload = [
                 {
