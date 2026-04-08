@@ -110,6 +110,7 @@ def test_browser_playwright_match_and_leave(server):
         """
 
         context = browser.new_context()
+        context.tracing.start(screenshots=True, snapshots=True)
         context.add_init_script(init_script)
 
         # Page 1: Alice
@@ -169,4 +170,11 @@ def test_browser_playwright_match_and_leave(server):
             time.sleep(0.1)
         assert left, 'Peer tile did not disappear within timeout'
 
+        try:
+            trace_path = f"/tmp/playwright-trace-{int(time.time())}.zip"
+            context.tracing.stop(path=trace_path)
+            page1.screenshot(path=f"/tmp/e2e-page1-{int(time.time())}.png")
+            page2.screenshot(path=f"/tmp/e2e-page2-{int(time.time())}.png")
+        except Exception as e:
+            print('Failed to save traces/screenshots:', e)
         browser.close()
