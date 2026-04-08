@@ -101,12 +101,19 @@ def test_browser_playwright_match_and_leave(server):
 
         // Stub getUserMedia to ensure headless environments provide tracks for createOffer
         if (!navigator.mediaDevices) navigator.mediaDevices = {};
-        navigator.mediaDevices.getUserMedia = () => Promise.resolve({
-            getTracks: () => [
-                { kind: 'video', stop: () => {} },
-                { kind: 'audio', stop: () => {} },
-            ],
-        });
+        navigator.mediaDevices.getUserMedia = () => {
+            // Prefer returning a real MediaStream when available so assignment to video.srcObject
+            // passes the browser's type checks in CI environments.
+            if (typeof MediaStream !== 'undefined') {
+                return Promise.resolve(new MediaStream());
+            }
+            return Promise.resolve({
+                getTracks: () => [
+                    { kind: 'video', stop: () => {} },
+                    { kind: 'audio', stop: () => {} },
+                ],
+            });
+        };
         """
 
         context = browser.new_context()
