@@ -1,0 +1,72 @@
+# WebSocket API（シグナリング）
+
+このドキュメントはシグナリング用 WebSocket のメッセージ仕様を簡潔にまとめたものです。
+
+## エンドポイント
+
+- ws://<host>/ws/{room_code}
+
+## 主要メッセージ
+
+1. クライアント -> サーバ
+
+- join
+  - 目的: ルームに参加（または待機）する
+  - 形式: {"type": "join", "name": "表示名"}
+
+- offer / answer / candidate
+  - 目的: SDP / ICE 情報を特定の参加者に送る
+  - 形式: {"type": "offer"|"answer"|"candidate", "target": "participant_id", "data": {...}}
+  - 備考: サーバは `target` に一致する参加者の websocket に `signal` メッセージを転送する
+
+- leave
+  - 目的: ルーム退出
+  - 形式: {"type": "leave"}
+
+2. サーバ -> クライアント
+
+- joined
+  - 形式: {"type": "joined", "room_code": "...", "participant_id": "...", "role": "host|guest", "name": "...", "color": "#rrggbb"}
+  - 備考: join 成功時に送られる。`color` は任意フィールドで、参加者に割り当てられた表示色です。
+
+
+- waiting
+  - 形式: {"type": "waiting", "room_code": "...", "message": "..."}
+  - 備考: まだ他の参加者がいない場合に返される
+
+- participants
+  - 形式: {"type": "participants", "room_code": "...", "participants": [{"id": "...", "name": "...", "role": "...", "color": "#rrggbb"}, ...]}
+  - 備考: 新規参加者に既存メンバーの一覧を返す。各参加者オブジェクトは `color` を含む場合があります。
+
+- participant-joined
+  - 形式: {"type": "participant-joined", "id": "...", "name": "...", "role": "...", "color": "#rrggbb"}
+  - 備考: 既存参加者へ新規参加者を通知する。`color` が含まれる場合、クライアントは表示に利用できます。
+
+
+- participant-left
+  - 形式: {"type": "participant-left", "id": "...", "name": "..."}
+  - 備考: 参加者退出時に残存者へ通知する
+
+- signal
+  - 形式: {"type": "signal", "signal_type": "offer|answer|candidate", "data": {...}, "from": "<sender_id>", "from_name": "<sender_name>"}
+  - 備考: サーバがターゲット参加者へ転送するメッセージ
+
+- camera
+  - 形式: {"type": "camera", "from": "<id>", "from_name": "<name>", "enabled": true|false}
+  - 備考: 送信者のカメラ表示状態を他の参加者へ通知します（送信者自身へは再送しません）。
+
+- audio
+  - 形式: {"type": "audio", "from": "<id>", "from_name": "<name>", "enabled": true|false}
+  - 備考: 送信者のマイク（音声）オン/オフ状態を他の参加者へ通知します（送信者自身へは再送しません）。
+
+## 実装メモ
+
+- サーバは最初の参加者を `host` として割り当てる
+- 最大参加者数は `app.room_manager.MAX_PARTICIPANTS`（デフォルト 10）で制限される
+- ルーム情報はプロセス内メモリで保持しているため、複数プロセス/ノードで水平スケールする場合は Redis 等で状態共有を行うこと
+
+## 参考コード
+
+- app/main.py: WebSocket エンドポイントの実装
+- app/room_manager.py: ルーム管理ロジック（参加者登録、退出、一覧取得など）
+

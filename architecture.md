@@ -76,9 +76,13 @@ flowchart TB
 
 ### Signaling
 
+- サーバは 1 対 1 のマッチング成立時に `matched` を送信して接続相手を通知する
+- 相手が退出・切断した場合は `peer-left` を送信する
 - WebRTC 接続に必要な情報を交換する
 - SDP offer / answer をやり取りする
 - ICE candidate を相手に届ける
+- サーバは participant の ID を使ったターゲット指定型のシグナリングをサポートする（クライアントは `target` フィールドで送信相手を指定）
+- 新規参加者には既存参加者のリスト (`participants`) を返し、既存参加者には `participant-joined` を送信する。退出時は `participant-left` を送る
 - 通話そのものは持たず、接続準備だけを担当する
 
 ### WebRTC

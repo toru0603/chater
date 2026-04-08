@@ -1,0 +1,220 @@
+name: Post CI summary to PR
+
+on:
+  check_suite:
+    types: [completed]
+
+permissions:
+  checks: read
+  issues: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  post-summary:
+    name: Post or update CI summary comment on PRs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gather workflow run and artifact IDs for this check suite
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const payload = github.context.payload;
+            const checkSuite = payload.check_suite;
+            if (!checkSuite) { core.info('No check_suite payload; exiting.'); return; }
+            const prs = checkSuite.pull_requests || [];
+            if (!prs || prs.length === 0) { core.info('No pull requests associated with this check suite; skipping.'); return; }
+            const owner = github.context.repo.owner;
+            const repo = github.context.repo.repo;
+            const headSha = checkSuite.head_sha || github.context.sha || '';
+            core.info(`Looking up workflow runs for head sha: ${headSha}`);
+
+            const runsResp = await github.rest.actions.listWorkflowRunsForRepo({ owner, repo, head_sha: headSha, per_page: 50 });
+            const runs = runsResp.data.workflow_runs || [];
+
+            // Choose the most-recent completed workflow run for this commit (prefer workflow named "CI")
+            let targetRun = null;
+            const completed = runs.filter(r => r.status === 'completed');
+            if (completed.length > 0) {
+              const ciRuns = completed.filter(r => (r.name === 'CI' || r.workflow_name === 'CI'));
+              const candidates = ciRuns.length ? ciRuns : completed;
+              candidates.sort((a,b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+              targetRun = candidates[0];
+            } else if (runs.length > 0) {
+              runs.sort((a,b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+              targetRun = runs[0];
+            }
+
+            if (!targetRun) {
+              core.info('No workflow run found for this head sha');
+              fs.writeFileSync('ci-artifacts.json', JSON.stringify({ prs: prs.map(p=>p.number) }));
+              return;
+            }
+
+            core.info(`Found workflow run id=${targetRun.id}, name=${targetRun.name}, updated_at=${targetRun.updated_at}`);
+            const artifactsResp = await github.rest.actions.listWorkflowRunArtifacts({ owner, repo, run_id: targetRun.id });
+            const artifacts = artifactsResp.data.artifacts || [];
+            const mapping = {};
+            for (const a of artifacts) mapping[a.name] = a.id;
+            const out = { prs: prs.map(p=>p.number), run_id: targetRun.id, artifacts: mapping, head_sha: headSha, run_updated_at: targetRun.updated_at };
+            fs.writeFileSync('ci-artifacts.json', JSON.stringify(out, null, 2));
+            core.info('Wrote ci-artifacts.json');
+
+      - name: Download artifacts and extract summaries
+        if: always()
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ ! -f ci-artifacts.json ]; then echo "ci-artifacts.json not found; nothing to download"; exit 0; fi
+          python - <<'PY' > /tmp/ci-artifact-list.txt
+import json,sys,os
+with open('ci-artifacts.json') as f:
+    d=json.load(f)
+run_id=d.get('run_id')
+print(run_id if run_id is not None else '')
+for k,v in d.get('artifacts',{}).items():
+    print(f"{k}\t{v}")
+PY
+          run_id=$(sed -n '1p' /tmp/ci-artifact-list.txt | tr -d '\r' || true)
+          if [ -z "$run_id" ]; then echo "No workflow run id found; skipping artifact download"; exit 0; fi
+          mkdir -p ci-artifacts
+          repo="$GITHUB_REPOSITORY"
+          token="$GITHUB_TOKEN"
+
+          sed -n '2,$p' /tmp/ci-artifact-list.txt | while IFS=$'\t' read -r name id; do
+            if [ -z "$name" ] || [ -z "$id" ]; then continue; fi
+            echo "Downloading artifact $name (id=$id)"
+            url="https://api.github.com/repos/$repo/actions/artifacts/$id/zip"
+            out="/tmp/artifact-$name.zip"
+            curl -sSL -H "Authorization: token $token" -H "Accept: application/vnd.github+json" "$url" -o "$out" || true
+            if [ ! -f "$out" ]; then echo "Failed to download $name"; continue; fi
+            mkdir -p /tmp/artifact-unpack-$name
+            unzip -qq -o "$out" -d /tmp/artifact-unpack-$name || true
+            # look for known summary files and copy them into ci-artifacts
+            for wanted in unit-summary.json e2e-summary.json coverage.xml; do
+              f=$(find /tmp/artifact-unpack-$name -type f -name "$wanted" -print -quit || true)
+              if [ -n "$f" ]; then cp -f "$f" "ci-artifacts/$wanted" || true; fi
+            done
+            # also collect any xml test result files into a raw-xml directory for later parsing
+            mkdir -p ci-artifacts/raw-xml
+            find /tmp/artifact-unpack-$name -type f -name '*.xml' -print | while read -r xf; do
+              bn=$(basename "$xf")
+              if [ "$bn" = "coverage.xml" ]; then continue; fi
+              cp -f "$xf" "ci-artifacts/raw-xml/$bn" || true
+            done
+          done
+
+          # If e2e-summary.json missing, try to parse junit/xml result files to create it
+          if [ ! -f ci-artifacts/e2e-summary.json ]; then
+            python - <<'PY'
+import os,xml.etree.ElementTree as ET,json,glob
+
+def parse_junit(path):
+    try:
+        root=ET.parse(path).getroot()
+        # handle testsuites or testsuite
+        if root.tag == 'testsuites':
+            # try aggregated attrs
+            tests=int(root.get('tests') or 0)
+            failures=int(root.get('failures') or 0)
+            errors=int(root.get('errors') or 0)
+            skipped=int(root.get('skipped') or 0)
+        else:
+            tests=int(root.get('tests') or 0)
+            failures=int(root.get('failures') or 0)
+            errors=int(root.get('errors') or 0)
+            skipped=int(root.get('skipped') or 0)
+        passed=tests - failures - errors - skipped
+        return {'tests':tests,'passed':passed,'failures':failures,'errors':errors,'skipped':skipped}
+    except Exception:
+        return None
+
+candidates = []
+# prefer files mentioning e2e
+for p in glob.glob('ci-artifacts/raw-xml/**/*.xml', recursive=True):
+    bn=os.path.basename(p).lower()
+    if 'e2e' in bn or 'playwright' in bn or 'e2e-results' in bn or 'e2e' in p.lower():
+        candidates.append(p)
+# fallback patterns
+if not candidates:
+    for p in glob.glob('ci-artifacts/raw-xml/**/*results*.xml', recursive=True):
+        candidates.append(p)
+if not candidates:
+    for p in glob.glob('ci-artifacts/raw-xml/**/*.xml', recursive=True):
+        candidates.append(p)
+
+for p in candidates:
+    res = parse_junit(p)
+    if res:
+        with open('ci-artifacts/e2e-summary.json','w') as f:
+            json.dump(res,f)
+        print('wrote e2e-summary.json from',p)
+        break
+PY
+          fi
+
+          echo "Extracted files:"; ls -lah ci-artifacts || true
+
+      - name: Build and post CI summary comment
+        if: always()
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const data = fs.existsSync('ci-artifacts.json') ? JSON.parse(fs.readFileSync('ci-artifacts.json','utf8')) : { prs: [] };
+            const prs = data.prs || [];
+            const owner = github.context.repo.owner;
+            const repo = github.context.repo.repo;
+            const headSha = data.head_sha || github.context.sha || '';
+            let md = `<!-- ci-summary -->\n## CI summary for commit \`${headSha}\`\n\n`;
+
+            if (fs.existsSync('ci-artifacts/unit-summary.json')) {
+              try {
+                const u = JSON.parse(fs.readFileSync('ci-artifacts/unit-summary.json','utf8'));
+                md += '### Unit Tests\n';
+                if (u.tests && u.passed !== undefined) md += `Passed: **${u.passed}/${u.tests}**\n\n`;
+                if (u.coverage_line) md += `Line coverage: **${u.coverage_line}%**, Branch coverage: **${u.coverage_branch}%**\n\n`;
+              } catch (e) { md += 'Failed to read unit-summary.json\n\n'; }
+            }
+
+            if (fs.existsSync('ci-artifacts/e2e-summary.json')) {
+              try {
+                const e = JSON.parse(fs.readFileSync('ci-artifacts/e2e-summary.json','utf8'));
+                md += '### E2E Tests\n';
+                if (e.tests && e.passed !== undefined) md += `Passed: **${e.passed}/${e.tests}**\n\n`;
+              } catch (e) { md += 'Failed to read e2e-summary.json\n\n'; }
+            }
+
+            if (fs.existsSync('ci-artifacts/coverage.xml')) {
+              md += '### Coverage XML attached as artifact\n\n';
+            }
+
+            md += `View full details: https://github.com/${owner}/${repo}/commit/${headSha}/checks\n\n_This comment is posted automatically._`;
+
+            for (const prNumber of prs) {
+              const commentsResp = await github.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 200 });
+              const matches = commentsResp.data.filter(c => c.body && c.body.includes('<!-- ci-summary -->') && c.user && (c.user.type === 'Bot' || c.user.login === 'github-actions[bot]'));
+              if (!matches || matches.length === 0) {
+                await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body: md });
+                core.info(`Posted CI summary comment on PR #${prNumber}`);
+              } else {
+                matches.sort((a,b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+                const keep = matches[0];
+                for (let i = 1; i < matches.length; i++) {
+                  const del = matches[i];
+                  try {
+                    await github.rest.issues.deleteComment({ owner, repo, comment_id: del.id });
+                    core.info(`Deleted old CI summary comment id=${del.id} on PR #${prNumber}`);
+                  } catch (e) {
+                    core.info(`Failed to delete comment ${del.id}: ${e.message || e}`);
+                  }
+                }
+                await github.rest.issues.updateComment({ owner, repo, comment_id: keep.id, body: md });
+                core.info(`Updated CI summary comment on PR #${prNumber}`);
+              }
+            }
