@@ -12,11 +12,12 @@ To run locally:
 Note: these tests are skipped automatically if Playwright is not installed.
 """
 
-import sys
+import os
 import subprocess
+import sys
 import time
 import urllib.request
-import os
+
 import pytest
 
 try:
@@ -44,16 +45,20 @@ def wait_for_server(timeout: float = 30.0) -> None:
 @pytest.fixture(scope="module")
 def server():
     """Run the uvicorn server for the duration of the test module."""
-    proc = subprocess.Popen([
-        sys.executable,
-        "-m",
-        "uvicorn",
-        "app.main:app",
-        "--host",
-        SERVER_HOST,
-        "--port",
-        str(SERVER_PORT),
-    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "app.main:app",
+            "--host",
+            SERVER_HOST,
+            "--port",
+            str(SERVER_PORT),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
     try:
         wait_for_server(30.0)
@@ -70,11 +75,11 @@ def test_browser_playwright_match_and_leave(server):
     """Open two browser pages, join the same room, verify match and peer-left behavior."""
     with sync_playwright() as p:
         launch_args = [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--use-fake-device-for-media-stream',
-            '--use-fake-ui-for-media-stream',
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--use-fake-device-for-media-stream",
+            "--use-fake-ui-for-media-stream",
         ]
         browser = p.chromium.launch(headless=True, args=launch_args)
 
@@ -127,8 +132,8 @@ def test_browser_playwright_match_and_leave(server):
         page1.fill("#roomCode", "e2e-room")
         page1.click("#joinBtn")
         time.sleep(1)
-        if os.environ.get('DEBUG_E2E'):
-            print('DEBUG: page1 status after join ->', page1.text_content('#status'))
+        if os.environ.get("DEBUG_E2E"):
+            print("DEBUG: page1 status after join ->", page1.text_content("#status"))
 
         # Should see the waiting message
         page1.wait_for_function(
@@ -143,24 +148,30 @@ def test_browser_playwright_match_and_leave(server):
         page2.fill("#roomCode", "e2e-room")
         page2.click("#joinBtn")
         time.sleep(1)
-        if os.environ.get('DEBUG_E2E'):
-            print('DEBUG: page1 status after page2 join ->', page1.text_content('#status'))
-            print('DEBUG: page2 status after join ->', page2.text_content('#status'))
+        if os.environ.get("DEBUG_E2E"):
+            print(
+                "DEBUG: page1 status after page2 join ->", page1.text_content("#status")
+            )
+            print("DEBUG: page2 status after join ->", page2.text_content("#status"))
 
         # Expect at least one page to reflect the presence of the peer (robust against timing)
         deadline = time.time() + 15.0
         matched = False
         while time.time() < deadline:
             try:
-                cnt1 = page1.evaluate("() => document.querySelectorAll('.video-tile').length")
-                cnt2 = page2.evaluate("() => document.querySelectorAll('.video-tile').length")
+                cnt1 = page1.evaluate(
+                    "() => document.querySelectorAll('.video-tile').length"
+                )
+                cnt2 = page2.evaluate(
+                    "() => document.querySelectorAll('.video-tile').length"
+                )
             except Exception:
                 cnt1 = cnt2 = 0
             if cnt1 >= 2 or cnt2 >= 2:
                 matched = True
                 break
             time.sleep(0.1)
-        assert matched, 'No peer appeared in either page within timeout'
+        assert matched, "No peer appeared in either page within timeout"
 
         # Bob leaves, Alice should see the tile removed (or at least one page updates)
         page2.click("#leaveBtn")
@@ -168,15 +179,19 @@ def test_browser_playwright_match_and_leave(server):
         left = False
         while time.time() < deadline:
             try:
-                cnt1 = page1.evaluate("() => document.querySelectorAll('.video-tile').length")
-                cnt2 = page2.evaluate("() => document.querySelectorAll('.video-tile').length")
+                cnt1 = page1.evaluate(
+                    "() => document.querySelectorAll('.video-tile').length"
+                )
+                cnt2 = page2.evaluate(
+                    "() => document.querySelectorAll('.video-tile').length"
+                )
             except Exception:
                 cnt1 = cnt2 = 0
             if cnt1 <= 1 or cnt2 <= 1:
                 left = True
                 break
             time.sleep(0.1)
-        assert left, 'Peer tile did not disappear within timeout'
+        assert left, "Peer tile did not disappear within timeout"
 
         try:
             trace_path = f"/tmp/playwright-trace-{int(time.time())}.zip"
@@ -184,5 +199,5 @@ def test_browser_playwright_match_and_leave(server):
             page1.screenshot(path=f"/tmp/e2e-page1-{int(time.time())}.png")
             page2.screenshot(path=f"/tmp/e2e-page2-{int(time.time())}.png")
         except Exception as e:
-            print('Failed to save traces/screenshots:', e)
+            print("Failed to save traces/screenshots:", e)
         browser.close()
