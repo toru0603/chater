@@ -90,9 +90,9 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const owner=github.context.repo.owner;
-            const repo=github.context.repo.repo;
-            const sha=process.env.GITHUB_SHA || github.context.sha;
+            const repoFull = process.env.GITHUB_REPOSITORY || '';
+            const [owner, repo] = repoFull.split('/');
+            const sha = process.env.GITHUB_SHA || '';
             let md='### Unit Tests summary\n';
             try {
               const s=JSON.parse(fs.readFileSync('unit-summary.json','utf8'));
@@ -185,9 +185,9 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const owner=github.context.repo.owner;
-            const repo=github.context.repo.repo;
-            const sha=process.env.GITHUB_SHA || github.context.sha;
+            const repoFull = process.env.GITHUB_REPOSITORY || '';
+            const [owner, repo] = repoFull.split('/');
+            const sha = process.env.GITHUB_SHA || '';
             let md='### E2E Tests summary\n';
             try {
               const s=JSON.parse(fs.readFileSync('e2e-summary.json','utf8'));
