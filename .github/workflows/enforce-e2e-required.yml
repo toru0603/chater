@@ -12,6 +12,13 @@ jobs:
   set-protection:
     runs-on: ubuntu-latest
     steps:
+      - name: Skip if not main
+        run: |
+          echo "GITHUB_REF=$GITHUB_REF"
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Not main branch; skipping branch protection change"
+            exit 0
+          fi
       - name: Ensure E2E is required in branch protection
         uses: actions/github-script@v6
         with:
