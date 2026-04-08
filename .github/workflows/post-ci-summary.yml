@@ -34,10 +34,17 @@ jobs:
             const runsResp = await github.rest.actions.listWorkflowRunsForRepo({ owner, repo, head_sha: headSha, per_page: 50 });
             const runs = runsResp.data.workflow_runs || [];
 
-            // Prefer a run named 'CI' or workflow_name 'CI'
-            let targetRun = runs.find(r => (r.name === 'CI' || r.workflow_name === 'CI') && r.status === 'completed');
-            if (!targetRun) {
-              targetRun = runs.find(r => r.status === 'completed') || runs[0];
+            // Choose the most-recent completed workflow run for this commit (prefer workflow named "CI")
+            let targetRun = null;
+            const completed = runs.filter(r => r.status === 'completed');
+            if (completed.length > 0) {
+              const ciRuns = completed.filter(r => (r.name === 'CI' || r.workflow_name === 'CI'));
+              const candidates = ciRuns.length ? ciRuns : completed;
+              candidates.sort((a,b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+              targetRun = candidates[0];
+            } else if (runs.length > 0) {
+              runs.sort((a,b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+              targetRun = runs[0];
             }
 
             if (!targetRun) {
@@ -46,12 +53,12 @@ jobs:
               return;
             }
 
-            core.info(`Found workflow run id=${targetRun.id}, name=${targetRun.name}`);
+            core.info(`Found workflow run id=${targetRun.id}, name=${targetRun.name}, updated_at=${targetRun.updated_at}`);
             const artifactsResp = await github.rest.actions.listWorkflowRunArtifacts({ owner, repo, run_id: targetRun.id });
             const artifacts = artifactsResp.data.artifacts || [];
             const mapping = {};
             for (const a of artifacts) mapping[a.name] = a.id;
-            const out = { prs: prs.map(p=>p.number), run_id: targetRun.id, artifacts: mapping, head_sha: headSha };
+            const out = { prs: prs.map(p=>p.number), run_id: targetRun.id, artifacts: mapping, head_sha: headSha, run_updated_at: targetRun.updated_at };
             fs.writeFileSync('ci-artifacts.json', JSON.stringify(out, null, 2));
             core.info('Wrote ci-artifacts.json');
 
@@ -190,13 +197,24 @@ PY
             md += `View full details: https://github.com/${owner}/${repo}/commit/${headSha}/checks\n\n_This comment is posted automatically._`;
 
             for (const prNumber of prs) {
-              const comments = await github.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100 });
-              const existing = comments.data.find(c => c.body && c.body.includes('<!-- ci-summary -->') && c.user && (c.user.type === 'Bot' || c.user.login === 'github-actions[bot]'));
-              if (existing) {
-                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body: md });
-                core.info(`Updated CI summary comment on PR #${prNumber}`);
-              } else {
+              const commentsResp = await github.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 200 });
+              const matches = commentsResp.data.filter(c => c.body && c.body.includes('<!-- ci-summary -->') && c.user && (c.user.type === 'Bot' || c.user.login === 'github-actions[bot]'));
+              if (!matches || matches.length === 0) {
                 await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body: md });
                 core.info(`Posted CI summary comment on PR #${prNumber}`);
+              } else {
+                matches.sort((a,b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+                const keep = matches[0];
+                for (let i = 1; i < matches.length; i++) {
+                  const del = matches[i];
+                  try {
+                    await github.rest.issues.deleteComment({ owner, repo, comment_id: del.id });
+                    core.info(`Deleted old CI summary comment id=${del.id} on PR #${prNumber}`);
+                  } catch (e) {
+                    core.info(`Failed to delete comment ${del.id}: ${e.message || e}`);
+                  }
+                }
+                await github.rest.issues.updateComment({ owner, repo, comment_id: keep.id, body: md });
+                core.info(`Updated CI summary comment on PR #${prNumber}`);
               }
             }
