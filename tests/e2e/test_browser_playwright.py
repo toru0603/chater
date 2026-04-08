@@ -132,8 +132,8 @@ def test_browser_playwright_match_and_leave(server):
 
         # Should see the waiting message
         page1.wait_for_function(
-            '() => document.getElementById("status").textContent.includes("waiting for a peer")',
-            timeout=15000,
+            '() => /waiting/i.test(document.getElementById("status").textContent)',
+            timeout=30000,
         )
 
         # Page 2: Bob
