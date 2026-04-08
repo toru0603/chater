@@ -36,7 +36,7 @@ jobs:
 
       - name: Run unit tests with coverage
         run: |
-          pytest --maxfail=1 --disable-warnings --cov=app --cov-branch --cov-report=xml --junitxml=unit-results.xml
+          pytest --maxfail=1 --disable-warnings --cov=app --cov-branch --cov-report=xml --junitxml=${{ github.workspace }}/unit-results.xml
 
       - name: Check coverage thresholds
         run: |
@@ -60,17 +60,35 @@ jobs:
           junit='unit-results.xml'
           cov='coverage.xml'
           summary={}
-          if os.path.exists(junit):
+          def parse_junit_file(path):
               try:
-                  root=ET.parse(junit).getroot()
-                  tests=int(root.get('tests') or 0)
-                  failures=int(root.get('failures') or 0)
-                  errors=int(root.get('errors') or 0)
-                  skipped=int(root.get('skipped') or 0)
+                  root=ET.parse(path).getroot()
+                  tests=failures=errors=skipped=0
+                  if root.tag == 'testsuites':
+                      # try aggregated attrs first
+                      if root.get('tests') is not None:
+                          tests=int(root.get('tests') or 0)
+                          failures=int(root.get('failures') or 0)
+                          errors=int(root.get('errors') or 0)
+                          skipped=int(root.get('skipped') or 0)
+                      else:
+                          for ts in root.findall('testsuite'):
+                              tests += int(ts.get('tests') or 0)
+                              failures += int(ts.get('failures') or 0)
+                              errors += int(ts.get('errors') or 0)
+                              skipped += int(ts.get('skipped') or 0)
+                  else:
+                      tests=int(root.get('tests') or 0)
+                      failures=int(root.get('failures') or 0)
+                      errors=int(root.get('errors') or 0)
+                      skipped=int(root.get('skipped') or 0)
                   passed = tests - failures - errors - skipped
-                  summary.update({'tests':tests,'passed':passed,'failures':failures,'errors':errors,'skipped':skipped})
+                  return {'tests':tests,'passed':passed,'failures':failures,'errors':errors,'skipped':skipped}
               except Exception as e:
-                  summary['tests_summary_error']=str(e)
+                  return {'tests_summary_error':str(e)}
+          if os.path.exists(junit):
+              res = parse_junit_file(junit)
+              summary.update(res)
           else:
               summary['tests']='missing'
           if os.path.exists(cov):
@@ -98,12 +116,12 @@ jobs:
             let md='### Unit Tests summary\n';
             try {
               const s=JSON.parse(fs.readFileSync('unit-summary.json','utf8'));
-              if (s.tests && s.passed!==undefined) {
-                md += `Passed: **${s.passed}/${s.tests}**\n\n`;
-              } else if (s.tests==='missing') {
+              if (s.tests === 'missing') {
                 md += 'Unit test results missing\n\n';
+              } else if (typeof s.tests !== 'undefined' && typeof s.passed !== 'undefined') {
+                md += `Passed: **${s.passed}/${s.tests}**\n\n`;
               }
-              if (s.coverage_line) md += `Line coverage: **${s.coverage_line}%**, Branch coverage: **${s.coverage_branch}%**\n\n`;
+              if (typeof s.coverage_line !== 'undefined') md += `Line coverage: **${s.coverage_line}%**, Branch coverage: **${s.coverage_branch}%**\n\n`;
             } catch (e) {
               md += 'Failed to parse unit-summary.json\n';
             }
@@ -115,11 +133,21 @@ jobs:
               core.info('Unit Tests run not found; skipping check run update.');
             }
 
-      - name: Upload unit summary
+      - name: Collect unit outputs
+        run: |
+          set -eux
+          # Copy any generated unit-results.xml (wherever it was written) to repo root
+          find "$GITHUB_WORKSPACE" -type f -name 'unit-results.xml' -exec cp {} "$GITHUB_WORKSPACE/unit-results.xml" \; || true
+          # Ensure unit-summary.json exists
+          if [ ! -f unit-summary.json ]; then echo '{"tests":"missing"}' > unit-summary.json; fi
+
+      - name: Upload unit artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: unit-summary
-          path: unit-summary.json
+          name: unit-artifacts
+          path: |
+            unit-summary.json
+            **/unit-results.xml
 
 
       - name: Upload coverage report
@@ -133,6 +161,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: unit-tests
     timeout-minutes: 30
+    env:
+      PYTHONPATH: ${{ github.workspace }}
 
     steps:
       - name: Checkout
@@ -155,7 +185,7 @@ jobs:
 
       - name: Run E2E tests
         run: |
-          pytest --maxfail=1 --disable-warnings -q tests/e2e --junitxml=e2e-results.xml
+          pytest --maxfail=1 --disable-warnings -q tests/e2e --junitxml=${{ github.workspace }}/e2e-results.xml
 
       - name: Create e2e test summary
         if: always()
@@ -164,17 +194,42 @@ jobs:
           import xml.etree.ElementTree as ET, json, os
           path='e2e-results.xml'
           summary={}
-          if os.path.exists(path):
+          def parse_junit_file(path):
               try:
-                  root=ET.parse(path).getroot()
-                  tests=int(root.get('tests') or 0)
-                  failures=int(root.get('failures') or 0)
-                  errors=int(root.get('errors') or 0)
-                  skipped=int(root.get('skipped') or 0)
+                  root = ET.parse(path).getroot()
+                  tests = failures = errors = skipped = 0
+                  if root.tag == 'testsuites':
+                      # try aggregated attrs first
+                      if root.get('tests') is not None:
+                          tests = int(root.get('tests') or 0)
+                          failures = int(root.get('failures') or 0)
+                          errors = int(root.get('errors') or 0)
+                          skipped = int(root.get('skipped') or 0)
+                      else:
+                          for ts in root.findall('testsuite'):
+                              tests += int(ts.get('tests') or 0)
+                              failures += int(ts.get('failures') or 0)
+                              errors += int(ts.get('errors') or 0)
+                              skipped += int(ts.get('skipped') or 0)
+                  elif root.tag == 'testsuite':
+                      tests = int(root.get('tests') or 0)
+                      failures = int(root.get('failures') or 0)
+                      errors = int(root.get('errors') or 0)
+                      skipped = int(root.get('skipped') or 0)
+                  else:
+                      for ts in root.findall('.//testsuite'):
+                          tests += int(ts.get('tests') or 0)
+                          failures += int(ts.get('failures') or 0)
+                          errors += int(ts.get('errors') or 0)
+                          skipped += int(ts.get('skipped') or 0)
                   passed = tests - failures - errors - skipped
-                  summary.update({'tests':tests,'passed':passed,'failures':failures,'errors':errors,'skipped':skipped})
+                  return {'tests':tests,'passed':passed,'failures':failures,'errors':errors,'skipped':skipped}
               except Exception as e:
-                  summary['tests_summary_error']=str(e)
+                  return {'tests_summary_error':str(e)}
+
+          if os.path.exists(path):
+              res = parse_junit_file(path)
+              summary.update(res)
           else:
               summary['tests']='missing'
           with open('e2e-summary.json','w') as f:
@@ -194,8 +249,11 @@ jobs:
             let md='### E2E Tests summary\n';
             try {
               const s=JSON.parse(fs.readFileSync('e2e-summary.json','utf8'));
-              if (s.tests && s.passed!==undefined) md+=`Passed: **${s.passed}/${s.tests}**\n\n`;
-              else if (s.tests==='missing') md+='E2E test results missing\n\n';
+              if (s.tests === 'missing') {
+                md += 'E2E test results missing\n\n';
+              } else if (typeof s.tests !== 'undefined' && typeof s.passed !== 'undefined') {
+                md += `Passed: **${s.passed}/${s.tests}**\n\n`;
+              }
             } catch(e) { md+='Failed to parse e2e-summary.json\n'; }
             const runs = await github.rest.checks.listForRef({owner,repo,ref:sha});
             const e2eRun = runs.data.check_runs.find(r=>r.name==='E2E Tests (Playwright)');
