@@ -1,6 +1,7 @@
 const joinBtn = document.getElementById("joinBtn");
 const leaveBtn = document.getElementById("leaveBtn");
 const toggleCamBtn = document.getElementById("toggleCameraBtn");
+const toggleAudioBtn = document.getElementById("toggleAudioBtn");
 const statusEl = document.getElementById("status");
 const nameInput = document.getElementById("name");
 const roomCodeInput = document.getElementById("roomCode");
@@ -22,6 +23,8 @@ let ownParticipantId = null;
 let ownName = null;
 
 let cameraEnabled = true;
+
+let audioEnabled = true;
 
 const rtcConfig = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -200,6 +203,13 @@ async function startCall() {
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     localVideo.srcObject = localStream;
+    // initialize camera/audio enabled flags based on actual track states
+    const vtracks = localStream.getVideoTracks();
+    cameraEnabled = vtracks && vtracks.length > 0 ? vtracks.some(t => t.enabled) : false;
+    const atracks = localStream.getAudioTracks();
+    audioEnabled = atracks && atracks.length > 0 ? atracks.some(t => t.enabled) : false;
+    if (toggleCamBtn) toggleCamBtn.textContent = cameraEnabled ? 'カメラOFF' : 'カメラON';
+    if (toggleAudioBtn) toggleAudioBtn.textContent = audioEnabled ? 'マイクOFF' : 'マイクON';
   } catch (err) {
     setStatus(`カメラ/マイクを取得できません: ${err.message}`);
     return;
@@ -210,7 +220,8 @@ async function startCall() {
     send({ type: 'join', name });
     setStatus('サーバに接続しました');
     joinBtn.disabled = true; leaveBtn.disabled = false;
-    if (toggleCamBtn) { toggleCamBtn.disabled = false; toggleCamBtn.textContent = 'カメラOFF'; }
+    if (toggleCamBtn) { toggleCamBtn.disabled = false; toggleCamBtn.textContent = cameraEnabled ? 'カメラOFF' : 'カメラON'; }
+    if (toggleAudioBtn) { toggleAudioBtn.disabled = false; toggleAudioBtn.textContent = audioEnabled ? 'マイクOFF' : 'マイクON'; }
   };
 
   socket.onmessage = async (ev) => {
@@ -321,6 +332,37 @@ async function startCall() {
       return;
     }
 
+    if (message.type === 'audio') {
+      const from = message.from;
+      const raw = message.enabled;
+      let enabled;
+      if (typeof raw === 'boolean') {
+        enabled = raw;
+      } else if (typeof raw === 'string') {
+        const low = raw.trim().toLowerCase();
+        if (low === 'true') enabled = true;
+        else if (low === 'false') enabled = false;
+        else return; // invalid payload
+      } else {
+        return; // invalid payload
+      }
+      const vid = remoteVideos[from];
+      if (vid) {
+        const tile = vid.parentElement;
+        if (tile) {
+          if (!enabled) {
+            vid.muted = true;
+            tile.classList.add('audio-muted');
+          } else {
+            vid.muted = false;
+            tile.classList.remove('audio-muted');
+            try { vid.play(); } catch (e) {}
+          }
+        }
+      }
+      return;
+    }
+
     if (message.type === 'chat') {
       // remember color and show danmaku with colored name
       if (message.color) participantColors[message.from] = message.color;
@@ -332,7 +374,7 @@ async function startCall() {
   };
 
   socket.onclose = () => {
-    joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCamBtn) { toggleCamBtn.disabled = true; toggleCamBtn.textContent = 'カメラOFF'; } setStatus('切断しました');
+    joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCamBtn) { toggleCamBtn.disabled = true; toggleCamBtn.textContent = 'カメラOFF'; } if (toggleAudioBtn) { toggleAudioBtn.disabled = true; toggleAudioBtn.textContent = 'マイクOFF'; } setStatus('切断しました');
   };
 }
 
@@ -344,7 +386,10 @@ function leaveCall() {
   if (socket) { socket.close(); socket = null; }
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
   localVideo.srcObject = null;
-  joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCamBtn) { toggleCamBtn.disabled = true; toggleCamBtn.textContent = 'カメラOFF'; } setStatus('待機中');
+  // reset UI state so toggles reflect the absence of tracks
+  cameraEnabled = true;
+  audioEnabled = true;
+  joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCamBtn) { toggleCamBtn.disabled = true; toggleCamBtn.textContent = 'カメラOFF'; } if (toggleAudioBtn) { toggleAudioBtn.disabled = true; toggleAudioBtn.textContent = 'マイクOFF'; } setStatus('待機中');
 }
 
 joinBtn.addEventListener('click', startCall);
@@ -357,6 +402,16 @@ if (toggleCamBtn) toggleCamBtn.addEventListener('click', () => {
   vids.forEach(t => t.enabled = cameraEnabled);
   send({ type: 'camera', enabled: cameraEnabled });
   toggleCamBtn.textContent = cameraEnabled ? 'カメラOFF' : 'カメラON';
+});
+
+if (toggleAudioBtn) toggleAudioBtn.addEventListener('click', () => {
+  if (!localStream) { setStatus('未接続またはマイク未取得'); return; }
+  const auds = localStream.getAudioTracks();
+  if (!auds || auds.length === 0) { setStatus('マイクが見つかりません'); return; }
+  audioEnabled = !audioEnabled;
+  auds.forEach(t => t.enabled = audioEnabled);
+  send({ type: 'audio', enabled: audioEnabled });
+  toggleAudioBtn.textContent = audioEnabled ? 'マイクOFF' : 'マイクON';
 });
 
 window.addEventListener('beforeunload', () => { if (socket) socket.close(); });
