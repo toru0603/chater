@@ -19,10 +19,6 @@ import urllib.request
 import os
 import pytest
 
-# Skip e2e tests in CI environments where Playwright/browser dependencies may not be available
-if os.environ.get("GITHUB_ACTIONS") or os.environ.get("CI"):
-    pytest.skip("Skipping e2e tests on CI", allow_module_level=True)
-
 try:
     from playwright.sync_api import sync_playwright
 except Exception:
@@ -33,7 +29,7 @@ SERVER_PORT = 8000
 BASE_URL = f"http://{SERVER_HOST}:{SERVER_PORT}"
 
 
-def wait_for_server(timeout: float = 10.0) -> None:
+def wait_for_server(timeout: float = 30.0) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -60,7 +56,7 @@ def server():
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     try:
-        wait_for_server(10.0)
+        wait_for_server(30.0)
         yield proc
     finally:
         proc.terminate()
@@ -73,7 +69,14 @@ def server():
 def test_browser_playwright_match_and_leave(server):
     """Open two browser pages, join the same room, verify match and peer-left behavior."""
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream'])
+        launch_args = [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--use-fake-device-for-media-stream',
+            '--use-fake-ui-for-media-stream',
+        ]
+        browser = p.chromium.launch(headless=True, args=launch_args)
 
         # Inject stubs before any page scripts run so the app JS won't require real devices.
         init_script = r"""
@@ -95,6 +98,15 @@ def test_browser_playwright_match_and_leave(server):
           addIceCandidate(){ return Promise.resolve(); }
           close(){ this.connectionState='closed'; if(this.onconnectionstatechange) this.onconnectionstatechange(); }
         };
+
+        // Stub getUserMedia to ensure headless environments provide tracks for createOffer
+        if (!navigator.mediaDevices) navigator.mediaDevices = {};
+        navigator.mediaDevices.getUserMedia = () => Promise.resolve({
+            getTracks: () => [
+                { kind: 'video', stop: () => {} },
+                { kind: 'audio', stop: () => {} },
+            ],
+        });
         """
 
         context = browser.new_context()
