@@ -73,7 +73,13 @@ def test_offer_forwarding_and_peer_left():
             _ = ws1.receive_json()
 
             # send offer from ws2 to ws1 using explicit target id
-            ws2.send_json({"type": "offer", "target": joined1.get("participant_id"), "data": {"sdp": "dummy"}})
+            ws2.send_json(
+                {
+                    "type": "offer",
+                    "target": joined1.get("participant_id"),
+                    "data": {"sdp": "dummy"},
+                }
+            )
 
             # ws1 should receive a 'signal' message (skip matched/participants)
             while True:
@@ -93,4 +99,3 @@ def test_offer_forwarding_and_peer_left():
                     continue
                 break
             assert peer_left["type"] in ("peer-left", "participant-left")
-

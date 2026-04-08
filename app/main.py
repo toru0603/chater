@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import asyncio
 import os
+from pathlib import Path
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -40,12 +40,16 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
     try:
         join_message = await websocket.receive_json()
         if join_message.get("type") != "join":
-            await websocket.send_json({"type": "error", "message": "join message is required"})
+            await websocket.send_json(
+                {"type": "error", "message": "join message is required"}
+            )
             await websocket.close(code=1008)
             return
 
         room_name = str(join_message.get("name") or "Guest")
-        participant, existing = await room_manager.add_participant(room_code, room_name, websocket)
+        participant, existing = await room_manager.add_participant(
+            room_code, room_name, websocket
+        )
         participant_id = participant.id
 
         await websocket.send_json(
@@ -70,9 +74,15 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
         else:
             # Build payloads
             participants_payload = [
-                {"id": p.id, "name": p.name, "role": p.role, "color": p.color} for p in existing
+                {"id": p.id, "name": p.name, "role": p.role, "color": p.color}
+                for p in existing
             ]
-            new_participant_payload = {"id": participant.id, "name": participant.name, "role": participant.role, "color": participant.color}
+            new_participant_payload = {
+                "id": participant.id,
+                "name": participant.name,
+                "role": participant.role,
+                "color": participant.color,
+            }
 
             # Send 'participants' to existing peers and the list of existing to the new participant concurrently
             try:
@@ -83,8 +93,10 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                         "room_code": room_code,
                         "participants": [new_participant_payload],
                     }
-                    if os.environ.get('DEBUG_E2E'):
-                        print(f"SERVER DEBUG: queue participants to existing {p.id} about {participant.id}")
+                    if os.environ.get("DEBUG_E2E"):
+                        print(
+                            f"SERVER DEBUG: queue participants to existing {p.id} about {participant.id}"
+                        )
                     tasks.append(asyncio.create_task(p.websocket.send_json(payload)))
 
                 new_payload = {
@@ -92,16 +104,20 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                     "room_code": room_code,
                     "participants": participants_payload,
                 }
-                if os.environ.get('DEBUG_E2E'):
-                    print(f"SERVER DEBUG: queue participants to new participant {participant.id} participants: {[p.id for p in existing]}")
+                if os.environ.get("DEBUG_E2E"):
+                    print(
+                        f"SERVER DEBUG: queue participants to new participant {participant.id} participants: {[p.id for p in existing]}"
+                    )
                 tasks.append(asyncio.create_task(websocket.send_json(new_payload)))
 
                 results = await asyncio.gather(*tasks, return_exceptions=True)
-                if os.environ.get('DEBUG_E2E'):
+                if os.environ.get("DEBUG_E2E"):
                     print(f"SERVER DEBUG: participants send results: {results}")
             except Exception:
-                if os.environ.get('DEBUG_E2E'):
-                    print(f"SERVER DEBUG: participants send failed overall for {participant.id}")
+                if os.environ.get("DEBUG_E2E"):
+                    print(
+                        f"SERVER DEBUG: participants send failed overall for {participant.id}"
+                    )
 
             # Send 'matched' notifications concurrently
             try:
@@ -112,8 +128,10 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                         "room_code": room_code,
                         "participants": [new_participant_payload],
                     }
-                    if os.environ.get('DEBUG_E2E'):
-                        print(f"SERVER DEBUG: queue matched to existing {p.id} about {participant.id}")
+                    if os.environ.get("DEBUG_E2E"):
+                        print(
+                            f"SERVER DEBUG: queue matched to existing {p.id} about {participant.id}"
+                        )
                     tasks.append(asyncio.create_task(p.websocket.send_json(payload)))
 
                 new_payload = {
@@ -121,16 +139,20 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                     "room_code": room_code,
                     "participants": participants_payload,
                 }
-                if os.environ.get('DEBUG_E2E'):
-                    print(f"SERVER DEBUG: queue matched to new participant {participant.id} participants: {[p.id for p in existing]}")
+                if os.environ.get("DEBUG_E2E"):
+                    print(
+                        f"SERVER DEBUG: queue matched to new participant {participant.id} participants: {[p.id for p in existing]}"
+                    )
                 tasks.append(asyncio.create_task(websocket.send_json(new_payload)))
 
                 results = await asyncio.gather(*tasks, return_exceptions=True)
-                if os.environ.get('DEBUG_E2E'):
+                if os.environ.get("DEBUG_E2E"):
                     print(f"SERVER DEBUG: matched send results: {results}")
             except Exception:
-                if os.environ.get('DEBUG_E2E'):
-                    print(f"SERVER DEBUG: matched send failed overall for {participant.id}")
+                if os.environ.get("DEBUG_E2E"):
+                    print(
+                        f"SERVER DEBUG: matched send failed overall for {participant.id}"
+                    )
 
         while True:
             message = await websocket.receive_json()
@@ -191,7 +213,11 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                         target = await room_manager.get_peer(participant.id)
                     except Exception:
                         # fallback to scanning room participants
-                        peers = [p for p in await room_manager.get_room_participants(room_code) if p.id != participant.id]
+                        peers = [
+                            p
+                            for p in await room_manager.get_room_participants(room_code)
+                            if p.id != participant.id
+                        ]
                         if len(peers) == 1:
                             target = peers[0]
                         else:
@@ -213,22 +239,39 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
         pass
     finally:
         if participant_id:
-            removed, remaining, empty = await room_manager.remove_participant(participant_id)
+            removed, remaining, empty = await room_manager.remove_participant(
+                participant_id
+            )
             if removed is not None:
                 for p in remaining:
                     try:
                         # send legacy-compatible 'peer-left' first
-                        await p.websocket.send_json({"type": "peer-left", "id": removed.id, "name": removed.name})
+                        await p.websocket.send_json(
+                            {
+                                "type": "peer-left",
+                                "id": removed.id,
+                                "name": removed.name,
+                            }
+                        )
                         # then send the newer 'participant-left' event
-                        await p.websocket.send_json({"type": "participant-left", "id": removed.id, "name": removed.name})
-                        if os.environ.get('DEBUG_E2E'):
-                            print(f"SERVER DEBUG: sent peer-left and participant-left to {p.id} removed:{removed.id}")
+                        await p.websocket.send_json(
+                            {
+                                "type": "participant-left",
+                                "id": removed.id,
+                                "name": removed.name,
+                            }
+                        )
+                        if os.environ.get("DEBUG_E2E"):
+                            print(
+                                f"SERVER DEBUG: sent peer-left and participant-left to {p.id} removed:{removed.id}"
+                            )
                     except Exception:
-                        if os.environ.get('DEBUG_E2E'):
-                            print(f"SERVER DEBUG: peer-left/participant-left send failed to {p.id}")
+                        if os.environ.get("DEBUG_E2E"):
+                            print(
+                                f"SERVER DEBUG: peer-left/participant-left send failed to {p.id}"
+                            )
             # ensure websocket is closed
             try:
                 await websocket.close()
             except Exception:
                 pass
-

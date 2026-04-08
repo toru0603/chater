@@ -60,7 +60,9 @@ def server():
     if os.environ.get("DEBUG_E2E"):
         proc = subprocess.Popen(uv_cmd)
     else:
-        proc = subprocess.Popen(uv_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen(
+            uv_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
 
     try:
         wait_for_server(30.0)
@@ -83,7 +85,7 @@ def test_browser_playwright_match_and_leave(server):
             "--use-fake-device-for-media-stream",
             "--use-fake-ui-for-media-stream",
         ]
-        headless = os.environ.get('PLAYWRIGHT_HEADFUL') != '1'
+        headless = os.environ.get("PLAYWRIGHT_HEADFUL") != "1"
         browser = p.chromium.launch(headless=headless, args=launch_args)
 
         # Inject stubs before any page scripts run so the app JS won't require real devices.
@@ -132,19 +134,21 @@ def test_browser_playwright_match_and_leave(server):
         # capture console logs from the page to help debugging message delivery
         def _p1_console(msg):
             try:
-                text = msg.text() if callable(getattr(msg, 'text', None)) else msg.text
+                text = msg.text() if callable(getattr(msg, "text", None)) else msg.text
             except Exception:
                 text = str(msg)
-            print('PAGE1 console:', text)
+            print("PAGE1 console:", text)
 
         page1.on("console", _p1_console)
         page1.goto(BASE_URL, wait_until="networkidle")
         # DEBUG: dump a snippet of the served app.js to ensure it's the edited version
         try:
-            snippet = page1.evaluate("() => fetch('/static/app.js').then(r => r.text()).then(t => t.slice(0,400))")
-            print('DEBUG: app.js (page1) snippet ->', snippet)
+            snippet = page1.evaluate(
+                "() => fetch('/static/app.js').then(r => r.text()).then(t => t.slice(0,400))"
+            )
+            print("DEBUG: app.js (page1) snippet ->", snippet)
         except Exception as e:
-            print('DEBUG: app.js fetch failed', e)
+            print("DEBUG: app.js fetch failed", e)
         page1.fill("#name", "Alice")
         page1.fill("#roomCode", "e2e-room")
         page1.click("#joinBtn")
@@ -161,37 +165,49 @@ def test_browser_playwright_match_and_leave(server):
 
             # Page 2: Bob
             page2 = context.new_page()
+
             def _p2_console(msg):
                 try:
-                    text = msg.text() if callable(getattr(msg, 'text', None)) else msg.text
+                    text = (
+                        msg.text() if callable(getattr(msg, "text", None)) else msg.text
+                    )
                 except Exception:
                     text = str(msg)
-                print('PAGE2 console:', text)
+                print("PAGE2 console:", text)
+
             page2.on("console", _p2_console)
             page2.goto(BASE_URL, wait_until="networkidle")
             page2.fill("#name", "Bob")
             page2.fill("#roomCode", "e2e-room")
             page2.click("#joinBtn")
             time.sleep(1)
-            if os.environ.get('DEBUG_E2E'):
-                print('DEBUG: page1 status after page2 join ->', page1.text_content('#status'))
-                print('DEBUG: page2 status after join ->', page2.text_content('#status'))
+            if os.environ.get("DEBUG_E2E"):
+                print(
+                    "DEBUG: page1 status after page2 join ->",
+                    page1.text_content("#status"),
+                )
+                print(
+                    "DEBUG: page2 status after join ->", page2.text_content("#status")
+                )
 
             # Expect at least one page to reflect the presence of the peer (robust against timing)
             deadline = time.time() + 15.0
             matched = False
             while time.time() < deadline:
                 try:
-                    cnt1 = page1.evaluate("() => document.querySelectorAll('.video-tile').length")
-                    cnt2 = page2.evaluate("() => document.querySelectorAll('.video-tile').length")
+                    cnt1 = page1.evaluate(
+                        "() => document.querySelectorAll('.video-tile').length"
+                    )
+                    cnt2 = page2.evaluate(
+                        "() => document.querySelectorAll('.video-tile').length"
+                    )
                 except Exception:
                     cnt1 = cnt2 = 0
                 if cnt1 >= 2 or cnt2 >= 2:
                     matched = True
                     break
                 time.sleep(0.1)
-            assert matched, 'No peer appeared in either page within timeout'
-
+            assert matched, "No peer appeared in either page within timeout"
 
             # Bob leaves, Alice should see the tile removed (or at least one page updates)
             page2.click("#leaveBtn")
@@ -199,15 +215,19 @@ def test_browser_playwright_match_and_leave(server):
             left = False
             while time.time() < deadline:
                 try:
-                    cnt1 = page1.evaluate("() => document.querySelectorAll('.video-tile').length")
-                    cnt2 = page2.evaluate("() => document.querySelectorAll('.video-tile').length")
+                    cnt1 = page1.evaluate(
+                        "() => document.querySelectorAll('.video-tile').length"
+                    )
+                    cnt2 = page2.evaluate(
+                        "() => document.querySelectorAll('.video-tile').length"
+                    )
                 except Exception:
                     cnt1 = cnt2 = 0
                 if cnt1 <= 1 or cnt2 <= 1:
                     left = True
                     break
                 time.sleep(0.1)
-            assert left, 'Peer tile did not disappear within timeout'
+            assert left, "Peer tile did not disappear within timeout"
         finally:
             # Always attempt to save traces/screenshots and stop tracing so failures are captured
             try:
@@ -215,11 +235,10 @@ def test_browser_playwright_match_and_leave(server):
                 context.tracing.stop(path=trace_path)
                 page1.screenshot(path=f"/tmp/e2e-page1-{int(time.time())}.png")
                 page2.screenshot(path=f"/tmp/e2e-page2-{int(time.time())}.png")
-                print('Saved trace:', trace_path)
+                print("Saved trace:", trace_path)
             except Exception as e:
-                print('Failed to save traces/screenshots:', e)
+                print("Failed to save traces/screenshots:", e)
             try:
                 browser.close()
             except Exception:
                 pass
-
