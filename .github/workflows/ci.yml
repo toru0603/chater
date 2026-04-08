@@ -3,6 +3,8 @@ name: CI
 permissions:
   checks: write
   contents: read
+  issues: write
+  pull-requests: write
 
 on:
   push:
@@ -119,6 +121,43 @@ jobs:
           name: unit-summary
           path: unit-summary.json
 
+      - name: Post unit summary to PR
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const eventPath = process.env.GITHUB_EVENT_PATH;
+            let prNumber = null;
+            if (eventPath && fs.existsSync(eventPath)) {
+              const payload = JSON.parse(fs.readFileSync(eventPath,'utf8'));
+              prNumber = payload.pull_request && payload.pull_request.number;
+            }
+            if (!prNumber) { core.info('No pull_request in event payload; skipping PR comment'); return; }
+            let md='<!-- ci-summary -->\n### Unit Tests\n';
+            try {
+              const s = JSON.parse(fs.readFileSync('unit-summary.json','utf8'));
+              if (s.tests && s.passed!==undefined) md += `Passed: **${s.passed}/${s.tests}**\n\n`;
+              if (s.coverage_line) md += `Line coverage: **${s.coverage_line}%**, Branch coverage: **${s.coverage_branch}%**\n\n`;
+            } catch(e) { md += 'Failed to read unit-summary.json\n'; }
+            const ownerRepo = process.env.GITHUB_REPOSITORY.split('/');
+            const owner = ownerRepo[0]; const repo = ownerRepo[1];
+            const comments = await github.rest.issues.listComments({owner, repo, issue_number: prNumber, per_page:100});
+            const existing = comments.data.find(c => c.body && c.body.includes('<!-- ci-summary -->') && (c.user.type === 'Bot' || c.user.login === 'github-actions[bot]'));
+            if (existing) {
+              // merge: replace Unit Tests section or append if not present
+              let body = existing.body;
+              if (body.includes('### Unit Tests')) {
+                // replace existing Unit Tests block
+                body = body.replace(/### Unit Tests[\s\S]*?(?=(\n###|$))/m, md + '\n');
+              } else {
+                body = body + '\n' + md;
+              }
+              await github.rest.issues.updateComment({owner,repo,comment_id:existing.id, body});
+            } else {
+              await github.rest.issues.createComment({owner,repo,issue_number:prNumber, body: md});
+            }
+
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
@@ -208,3 +247,40 @@ jobs:
             /tmp/playwright-trace-*.zip
             /tmp/e2e-page1-*.png
             /tmp/e2e-page2-*.png
+
+      - name: Post e2e summary to PR
+        if: always()
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const eventPath = process.env.GITHUB_EVENT_PATH;
+            let prNumber = null;
+            if (eventPath && fs.existsSync(eventPath)) {
+              const payload = JSON.parse(fs.readFileSync(eventPath,'utf8'));
+              prNumber = payload.pull_request && payload.pull_request.number;
+            }
+            if (!prNumber) { core.info('No pull_request in event payload; skipping PR comment'); return; }
+            let md='### E2E Tests\n';
+            try {
+              const s = JSON.parse(fs.readFileSync('e2e-summary.json','utf8'));
+              if (s.tests && s.passed!==undefined) md += `Passed: **${s.passed}/${s.tests}**\n\n`;
+            } catch(e) { md += 'Failed to read e2e-summary.json\n'; }
+            const ownerRepo = process.env.GITHUB_REPOSITORY.split('/');
+            const owner = ownerRepo[0]; const repo = ownerRepo[1];
+            const comments = await github.rest.issues.listComments({owner, repo, issue_number: prNumber, per_page:100});
+            const existing = comments.data.find(c => c.body && c.body.includes('<!-- ci-summary -->') && (c.user.type === 'Bot' || c.user.login === 'github-actions[bot]'));
+            if (existing) {
+              let body = existing.body;
+              if (body.includes('### E2E Tests')) {
+                body = body.replace(/### E2E Tests[\s\S]*?(?=(\n###|$))/m, md + '\n');
+              } else {
+                body = body + '\n' + md;
+              }
+              await github.rest.issues.updateComment({owner,repo,comment_id:existing.id, body});
+            } else {
+              // create a new comment that includes marker and md
+              const body = '<!-- ci-summary -->\n' + md;
+              await github.rest.issues.createComment({owner,repo,issue_number:prNumber, body});
+            }
