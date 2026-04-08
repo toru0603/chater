@@ -1,7 +1,5 @@
-// Frontend app.js (merged conflict resolution)
 const joinBtn = document.getElementById("joinBtn");
 const leaveBtn = document.getElementById("leaveBtn");
-const toggleCamBtn = document.getElementById("toggleCameraBtn");
 const statusEl = document.getElementById("status");
 const nameInput = document.getElementById("name");
 const roomCodeInput = document.getElementById("roomCode");
@@ -21,11 +19,6 @@ const pendingCandidates = {}; // peerId -> []
 const participantColors = {}; // peerId -> color
 let ownParticipantId = null;
 let ownName = null;
-let cameraEnabled = true;
-
-// Debug: surface runtime errors to console for e2e diagnostics (temporary)
-window.addEventListener('error', e => { try { console.error('PAGE ERROR:', e && e.message, e && e.error && e.error.stack); } catch(e) {} });
-window.addEventListener('unhandledrejection', e => { try { console.error('UNHANDLED PROMISE REJECTION:', e && e.reason); } catch(e) {} });
 
 const rtcConfig = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -210,35 +203,42 @@ async function startCall() {
   }
 
   socket = new WebSocket(`ws://${location.host}/ws/${encodeURIComponent(roomCode)}`);
+  socket.onopen = () => {
+    send({ type: 'join', name });
+    setStatus('サーバに接続しました');
+    joinBtn.disabled = true; leaveBtn.disabled = false;
+  };
 
-  // attach onmessage first to avoid missing messages that arrive immediately after open
   socket.onmessage = async (ev) => {
-    // DEBUG: log raw websocket messages for e2e troubleshooting (temporary)
-    try { console.log('WS RECV:', ev.data); } catch(e) {}
     const message = JSON.parse(ev.data);
 
     if (message.type === 'waiting') { setStatus(message.message); return; }
     if (message.type === 'joined') {
+      // store own id and color and update local title
       ownParticipantId = message.participant_id;
       ownName = message.name || ownName;
       if (message.color) participantColors[ownParticipantId] = message.color;
-      const localTile = localVideo ? localVideo.parentElement : null;
+      const localTile = document.querySelector('[data-peer-id="local"]');
       if (localTile) {
         const title = localTile.querySelector('h3');
         if (title) {
           title.textContent = ownName || title.textContent;
           title.style.color = participantColors[ownParticipantId] || title.style.color;
         }
+        localTile.dataset.peerId = ownParticipantId;
       }
       setStatus(`参加しました: ${message.room_code}`);
-      return;
-    }
+      return; }
 
-    if (message.type === 'participants' || message.type === 'matched') {
-      setStatus('マッチ成功');
+    if (message.type === 'participants') {
+      setStatus('既存参加者が見つかりました');
       const parts = message.participants || [];
+      // register colors first so titles get colored
       for (const p of parts) {
         if (p.color) participantColors[p.id] = p.color;
+      }
+      // create peer connections and initiate offers to existing participants
+      for (const p of parts) {
         createRemoteVideoElement(p.id, p.name);
         const tile = document.querySelector(`[data-peer-id="${p.id}"]`);
         if (tile) {
@@ -265,46 +265,48 @@ async function startCall() {
       return;
     }
 
+    if (message.type === 'matched') {
+      const p = message.peer || {};
+      if (p.color) participantColors[p.id] = p.color;
+      createRemoteVideoElement(p.id, p.name);
+      const tileMatched = document.querySelector(`[data-peer-id="${p.id}"]`);
+      if (tileMatched) {
+        const titleMatched = tileMatched.querySelector('h3');
+        if (titleMatched && participantColors[p.id]) titleMatched.style.color = participantColors[p.id];
+      }
+      setStatus('マッチ成功');
+      if (message.initiator) {
+        const pc = ensurePeerConnection(p.id);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        send({ type: 'offer', target: p.id, data: pc.localDescription });
+      }
+      return;
+    }
+
     if (message.type === 'signal') {
       await handleSignal(message);
       return;
     }
 
     if (message.type === 'peer-left') {
-      setStatus('相手が退出しました');
       removeRemoteVideoElement(message.id);
       if (peers[message.id]) { try { peers[message.id].close(); } catch(e){} delete peers[message.id]; }
+      // ensure message is visible after connection state updates
+      setTimeout(() => { setStatus('相手が退出しました'); }, 50);
       return;
     }
 
     if (message.type === 'participant-left') {
       setStatus(`${message.name} が退出しました`);
       removeRemoteVideoElement(message.id);
+      // close pc if exists
       if (peers[message.id]) { try { peers[message.id].close(); } catch(e){} delete peers[message.id]; }
       return;
     }
 
-    if (message.type === 'camera') {
-      const from = message.from;
-      const enabled = !!message.enabled;
-      const vid = remoteVideos[from];
-      if (vid) {
-        const tile = vid.parentElement;
-        if (tile) {
-          if (!enabled) {
-            vid.style.display = 'none';
-            tile.classList.add('video-muted');
-          } else {
-            vid.style.display = '';
-            tile.classList.remove('video-muted');
-            try { vid.play(); } catch (e) {}
-          }
-        }
-      }
-      return;
-    }
-
     if (message.type === 'chat') {
+      // remember color and show danmaku with colored name
       if (message.color) participantColors[message.from] = message.color;
       addDanmaku(message.from, message.from_name || '匿名', message.text || '', message.color || participantColors[message.from]);
       return;
@@ -313,15 +315,8 @@ async function startCall() {
     if (message.type === 'error') { setStatus(message.message); }
   };
 
-  socket.onopen = () => {
-    send({ type: 'join', name });
-    setStatus('サーバに接続しました');
-    joinBtn.disabled = true; leaveBtn.disabled = false;
-    if (toggleCamBtn) { toggleCamBtn.disabled = false; toggleCamBtn.textContent = 'カメラOFF'; }
-  };
-
   socket.onclose = () => {
-    joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCamBtn) { toggleCamBtn.disabled = true; toggleCamBtn.textContent = 'カメラOFF'; } setStatus('切断しました');
+    joinBtn.disabled = false; leaveBtn.disabled = true; setStatus('切断しました');
   };
 }
 
@@ -333,19 +328,10 @@ function leaveCall() {
   if (socket) { socket.close(); socket = null; }
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
   localVideo.srcObject = null;
-  joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCamBtn) { toggleCamBtn.disabled = true; toggleCamBtn.textContent = 'カメラOFF'; } setStatus('待機中');
+  joinBtn.disabled = false; leaveBtn.disabled = true; setStatus('待機中');
 }
 
 joinBtn.addEventListener('click', startCall);
 leaveBtn.addEventListener('click', leaveCall);
-if (toggleCamBtn) toggleCamBtn.addEventListener('click', () => {
-  if (!localStream) { setStatus('未接続またはカメラ未取得'); return; }
-  const vids = localStream.getVideoTracks();
-  if (!vids || vids.length === 0) { setStatus('カメラが見つかりません'); return; }
-  cameraEnabled = !cameraEnabled;
-  vids.forEach(t => t.enabled = cameraEnabled);
-  send({ type: 'camera', enabled: cameraEnabled });
-  toggleCamBtn.textContent = cameraEnabled ? 'カメラOFF' : 'カメラON';
-});
 
 window.addEventListener('beforeunload', () => { if (socket) socket.close(); });

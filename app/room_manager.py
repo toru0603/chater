@@ -4,9 +4,10 @@ import asyncio
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Optional, List, Dict
 
 from fastapi import WebSocket
+
 
 MAX_PARTICIPANTS = 2
 
@@ -56,9 +57,7 @@ class RoomManager:
         self._rooms: Dict[str, Room] = {}
         self._lock = asyncio.Lock()
 
-    async def add_participant(
-        self, room_code: str, name: str, websocket: WebSocket
-    ) -> tuple[Participant, List[Participant]]:
+    async def add_participant(self, room_code: str, name: str, websocket: WebSocket) -> tuple[Participant, Optional[Participant]]:
         async with self._lock:
             room = self._rooms.setdefault(room_code, Room(code=room_code))
             if len(room.participants) >= MAX_PARTICIPANTS:
@@ -77,29 +76,22 @@ class RoomManager:
             )
             existing = list(room.participants.values())
             room.participants[participant.id] = participant
-            return participant, existing
+            peer = existing[0] if existing else None
+            return participant, peer
 
-    async def remove_participant(
-        self, participant_id: str
-    ) -> tuple[Optional[Participant], List[Participant], bool]:
+    async def remove_participant(self, participant_id: str) -> tuple[Optional[Participant], bool]:
         async with self._lock:
-            room = next(
-                (
-                    room
-                    for room in self._rooms.values()
-                    if participant_id in room.participants
-                ),
-                None,
-            )
+            room = next((room for room in self._rooms.values() if participant_id in room.participants), None)
             if room is None:
-                return None, [], False
+                return None, False
 
             removed = room.participants.pop(participant_id, None)
             remaining = list(room.participants.values())
+            peer = remaining[0] if remaining else None
             empty = len(room.participants) == 0
             if empty:
                 self._rooms.pop(room.code, None)
-            return removed, remaining, empty
+            return peer, empty
 
     async def get_participant(self, participant_id: str) -> Optional[Participant]:
         async with self._lock:
@@ -108,17 +100,15 @@ class RoomManager:
                     return room.participants.get(participant_id)
             return None
 
-    async def get_room_participants(self, room_code: str) -> List[Participant]:
-        async with self._lock:
-            room = self._rooms.get(room_code)
-            return list(room.participants.values()) if room else []
-
     async def get_peer(self, participant_id: str) -> Optional[Participant]:
         async with self._lock:
             for room in self._rooms.values():
                 if participant_id in room.participants:
-                    for pid, p in room.participants.items():
-                        if pid != participant_id:
-                            return p
-                    return None
-            return None
+                    peers = [p for pid, p in room.participants.items() if pid != participant_id]
+                    return peers[0] if peers else None
+        return None
+
+    async def get_room_participants(self, room_code: str) -> List[Participant]:
+        async with self._lock:
+            room = self._rooms.get(room_code)
+            return list(room.participants.values()) if room else []
