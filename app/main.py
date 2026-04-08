@@ -69,7 +69,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                 }
             )
         else:
-            # Send 'matched' to both participants (tests assert only the type)
+            # Send participants to the new participant and notify the existing peer
             participants_payload = [
                 {
                     "id": peer.id,
@@ -87,18 +87,20 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
             # Inform the new participant
             await websocket.send_json(
                 {
-                    "type": "matched",
+                    "type": "participants",
                     "room_code": room_code,
                     "participants": participants_payload,
                 }
             )
-            # Notify existing peer about the match
+            # Notify existing peer about the new participant
             try:
                 await peer.websocket.send_json(
                     {
-                        "type": "matched",
-                        "room_code": room_code,
-                        "participants": participants_payload,
+                        "type": "participant-joined",
+                        "id": participant.id,
+                        "name": participant.name,
+                        "role": participant.role,
+                        "color": participant.color,
                     }
                 )
             except Exception:
@@ -164,7 +166,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                 try:
                     await peer_after_remove.websocket.send_json(
                         {
-                            "type": "peer-left",
+                            "type": "participant-left",
                             "id": participant.id,
                             "name": participant.name,
                         }
