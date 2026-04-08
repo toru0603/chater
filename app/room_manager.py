@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -52,7 +52,7 @@ class Room:
 class RoomManager:
     def __init__(self) -> None:
         self._rooms: Dict[str, Room] = {}
-        self._lock = asyncio.Lock()
+        self._lock = threading.Lock()
 
     async def add_participant(
         self, room_code: str, name: str, websocket: WebSocket
@@ -60,7 +60,7 @@ class RoomManager:
         """Add a participant. Returns (participant, peer) where peer is None for the
         first participant and the existing participant for the second joiner.
         """
-        async with self._lock:
+        with self._lock:
             room = self._rooms.setdefault(room_code, Room(code=room_code))
             if len(room.participants) >= MAX_PARTICIPANTS:
                 raise RoomFullError(room_code)
@@ -94,7 +94,7 @@ class RoomManager:
         peer_after_remove is the remaining participant (if any), empty is True when
         the room becomes empty after removal.
         """
-        async with self._lock:
+        with self._lock:
             room = next(
                 (r for r in self._rooms.values() if participant_id in r.participants),
                 None,
@@ -114,7 +114,7 @@ class RoomManager:
 
     async def get_peer(self, participant_id: str) -> Optional[Participant]:
         """Return the other participant in the same room, or None if not found."""
-        async with self._lock:
+        with self._lock:
             for room in self._rooms.values():
                 if participant_id in room.participants:
                     for pid, p in room.participants.items():
@@ -123,13 +123,13 @@ class RoomManager:
             return None
 
     async def get_participant(self, participant_id: str) -> Optional[Participant]:
-        async with self._lock:
+        with self._lock:
             for room in self._rooms.values():
                 if participant_id in room.participants:
                     return room.participants.get(participant_id)
             return None
 
     async def get_room_participants(self, room_code: str) -> List[Participant]:
-        async with self._lock:
+        with self._lock:
             room = self._rooms.get(room_code)
             return list(room.participants.values()) if room else []

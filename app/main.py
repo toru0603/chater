@@ -133,12 +133,16 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                 continue
 
             if message_type in {"offer", "answer", "candidate"}:
+                # If no explicit target is provided, forward to the peer in the room.
                 target_id = message.get("target")
-                if not target_id:
-                    continue
-                target = await room_manager.get_participant(target_id)
+                if target_id:
+                    target = await room_manager.get_participant(target_id)
+                else:
+                    target = await room_manager.get_peer(participant.id)
+
                 if not target:
                     continue
+
                 await target.websocket.send_json(
                     {
                         "type": "signal",
