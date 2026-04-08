@@ -1,0 +1,66 @@
+name: Auto-merge on green
+
+on:
+  workflow_run:
+    workflows: ["CI", "Copilot Auto-Apply"]
+    types: [completed]
+
+permissions:
+  pull-requests: write
+  checks: read
+  statuses: read
+  contents: read
+
+jobs:
+  enable-auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable auto-merge when all required checks passed
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const runId = context.payload.workflow_run.id;
+            const run = await github.rest.actions.getWorkflowRun({ owner: context.repo.owner, repo: context.repo.repo, run_id: runId });
+            const commitSha = run.data.head_sha;
+            core.info(`Workflow run for commit ${commitSha}`);
+
+            // Find PRs associated with this commit
+            const prs = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner: context.repo.owner, repo: context.repo.repo, commit_sha: commitSha });
+            if (!prs.data || prs.data.length === 0) {
+              core.info('No PRs associated with this commit');
+              return;
+            }
+
+            const requiredContexts = ['Unit Tests', 'E2E Tests (Playwright)', 'Copilot Suggestions (auto-apply)'];
+
+            // Get check runs for the commit
+            const checks = await github.rest.checks.listForRef({ owner: context.repo.owner, repo: context.repo.repo, ref: commitSha });
+
+            for (const pr of prs.data) {
+              const prNumber = pr.number;
+              core.info(`Evaluating PR #${prNumber}`);
+
+              // ensure all required contexts have a successful check run
+              let ok = true;
+              for (const ctx of requiredContexts) {
+                const cr = checks.data.check_runs.find(c => c.name === ctx);
+                if (!cr || cr.conclusion !== 'success') {
+                  core.info(`Required check ${ctx} not successful for PR #${prNumber}`);
+                  ok = false;
+                  break;
+                }
+              }
+
+              if (!ok) continue;
+
+              // fetch PR node id (GraphQL ID) and enable auto-merge
+              try {
+                const prData = await github.rest.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber });
+                const pullRequestNodeId = prData.data.node_id;
+                const query = `mutation($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {\n  enablePullRequestAutoMerge(input: {pullRequestId: $pullRequestId, mergeMethod: $mergeMethod}) {\n    pullRequest { id }\n  }\n}`;
+                await github.graphql(query, { pullRequestId: pullRequestNodeId, mergeMethod: 'MERGE' });
+                core.info(`Enabled auto-merge for PR #${prNumber}`);
+              } catch (err) {
+                core.info(`Failed to enable auto-merge for PR #${prNumber}: ${err}`);
+              }
+            }

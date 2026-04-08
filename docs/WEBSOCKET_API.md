@@ -23,31 +23,23 @@
   - 目的: ルーム退出
   - 形式: {"type": "leave"}
 
-- chat
-  - 目的: チャットメッセージをブロードキャストする
-  - 形式: {"type": "chat", "text": "..."}
-
-- camera
-  - 目的: カメラの on/off をルーム内の他者に通知する
-  - 形式: {"type": "camera", "enabled": true|false}
-
 2. サーバ -> クライアント
 
 - joined
-  - 形式: {"type": "joined", "room_code": "...", "participant_id": "...", "role": "host|participant", "name": "...", "color": "..."}
-  - 備考: join 成功時に送られる
+  - 形式: {"type": "joined", "room_code": "...", "participant_id": "...", "role": "host|participant", "name": "...", "color": "#rrggbb"}
+  - 備考: join 成功時に送られる。`color` は任意フィールドで、参加者に割り当てられた表示色です。
 
 - waiting
   - 形式: {"type": "waiting", "room_code": "...", "message": "..."}
   - 備考: まだ他の参加者がいない場合に返される
 
 - participants
-  - 形式: {"type": "participants", "room_code": "...", "participants": [{"id": "...", "name": "...", "role": "...", "color": "..."}, ...]}
-  - 備考: 新規参加者に既存メンバーの一覧を返す
+  - 形式: {"type": "participants", "room_code": "...", "participants": [{"id": "...", "name": "...", "role": "...", "color": "#rrggbb"}, ...]}
+  - 備考: 新規参加者に既存メンバーの一覧を返す。各参加者オブジェクトは `color` を含む場合があります。
 
 - participant-joined
-  - 形式: {"type": "participant-joined", "id": "...", "name": "...", "role": "...", "color": "..."}
-  - 備考: 既存参加者へ新規参加者を通知する
+  - 形式: {"type": "participant-joined", "id": "...", "name": "...", "role": "...", "color": "#rrggbb"}
+  - 備考: 既存参加者へ新規参加者を通知する。`color` が含まれる場合、クライアントは表示に利用できます。
 
 - participant-left
   - 形式: {"type": "participant-left", "id": "...", "name": "..."}
@@ -56,10 +48,6 @@
 - signal
   - 形式: {"type": "signal", "signal_type": "offer|answer|candidate", "data": {...}, "from": "<sender_id>", "from_name": "<sender_name>"}
   - 備考: サーバがターゲット参加者へ転送するメッセージ
-
-- chat
-  - 形式: {"type": "chat", "from": "<sender_id>", "from_name": "<sender_name>", "text": "...", "color": "..."}
-  - 備考: サーバが受け取った chat メッセージをルーム内にブロードキャストする
 
 ## 実装メモ
 

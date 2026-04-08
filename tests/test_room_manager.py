@@ -1,11 +1,13 @@
 import asyncio
+
 import pytest
 
-from app.room_manager import RoomManager, RoomFullError, MAX_PARTICIPANTS
+from app.room_manager import RoomFullError, RoomManager
 
 
 class DummyWebSocket:
     """Lightweight stand-in for FastAPI WebSocket in RoomManager tests."""
+
     pass
 
 
@@ -15,52 +17,58 @@ def test_add_get_remove_peer():
     ws2 = DummyWebSocket()
 
     # Add first participant
-    p1, peer1 = asyncio.run(manager.add_participant("room1", "Alice", ws1))
-    assert peer1 is None
+    p1, existing1 = asyncio.run(manager.add_participant("room1", "Alice", ws1))
+    assert isinstance(existing1, list) and len(existing1) == 0
     assert p1.role == "host"
     assert p1.name == "Alice"
     assert p1.room_code == "room1"
 
     # Add second participant and verify matching
-    p2, peer2 = asyncio.run(manager.add_participant("room1", "Bob", ws2))
-    assert peer2 is not None
-    assert peer2.id == p1.id
-    assert p2.role == "guest"
+    p2, existing2 = asyncio.run(manager.add_participant("room1", "Bob", ws2))
+    assert isinstance(existing2, list) and len(existing2) == 1
+    assert existing2[0].id == p1.id
+    assert p2.role == "participant"
 
-    # get_peer should return the other participant
-    peer_of_p1 = asyncio.run(manager.get_peer(p1.id))
+    # get_room_participants should return both participants
+    participants = asyncio.run(manager.get_room_participants("room1"))
+    assert len(participants) == 2
+    peer_of_p1 = next((p for p in participants if p.id != p1.id), None)
     assert peer_of_p1 is not None and peer_of_p1.id == p2.id
 
     # Remove first participant
-    peer_after_remove, empty = asyncio.run(manager.remove_participant(p1.id))
-    assert peer_after_remove is not None and peer_after_remove.id == p2.id
+    removed, remaining, empty = asyncio.run(manager.remove_participant(p1.id))
+    assert removed is not None and removed.id == p1.id
+    assert len(remaining) == 1 and remaining[0].id == p2.id
     assert empty is False
 
     # Remove second participant (room should become empty)
-    peer_after_remove2, empty2 = asyncio.run(manager.remove_participant(p2.id))
-    assert peer_after_remove2 is None
+    removed2, remaining2, empty2 = asyncio.run(manager.remove_participant(p2.id))
+    assert removed2 is not None and removed2.id == p2.id
     assert empty2 is True
 
-    # Removing nonexistent participant returns (None, False)
-    none_peer, none_empty = asyncio.run(manager.remove_participant("nonexistent"))
-    assert none_peer is None
+    # Removing nonexistent participant returns (None, [], False)
+    none_removed, none_remaining, none_empty = asyncio.run(
+        manager.remove_participant("nonexistent")
+    )
+    assert none_removed is None
+    assert none_remaining == []
     assert none_empty is False
 
 
 def test_room_full_error():
     manager = RoomManager()
-    # create dummy websockets equal to MAX_PARTICIPANTS + 1
-    ws_list = [DummyWebSocket() for _ in range(MAX_PARTICIPANTS + 1)]
+    ws_extra = DummyWebSocket()
 
-    # fill the room to capacity
+    # Fill the room up to the configured MAX_PARTICIPANTS and ensure overflow raises
+    from app.room_manager import MAX_PARTICIPANTS
+
     for i in range(MAX_PARTICIPANTS):
-        asyncio.run(manager.add_participant("room2", f"P{i}", ws_list[i]))
+        asyncio.run(manager.add_participant("room2", str(i), DummyWebSocket()))
 
-    # adding one more should raise RoomFullError
     with pytest.raises(RoomFullError):
-        asyncio.run(manager.add_participant("room2", "overflow", ws_list[MAX_PARTICIPANTS]))
+        asyncio.run(manager.add_participant("room2", "overflow", ws_extra))
 
 
-def test_get_peer_none_when_not_found():
+def test_get_participant_none_when_not_found():
     manager = RoomManager()
-    assert asyncio.run(manager.get_peer("nope")) is None
+    assert asyncio.run(manager.get_participant("nope")) is None

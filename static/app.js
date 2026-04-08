@@ -222,14 +222,14 @@ async function startCall() {
       ownParticipantId = message.participant_id;
       ownName = message.name || ownName;
       if (message.color) participantColors[ownParticipantId] = message.color;
-      const localTile = document.querySelector('[data-peer-id="local"]');
+      const localTile = localVideo ? localVideo.parentElement : null;
       if (localTile) {
         const title = localTile.querySelector('h3');
         if (title) {
           title.textContent = ownName || title.textContent;
           title.style.color = participantColors[ownParticipantId] || title.style.color;
         }
-        localTile.dataset.peerId = ownParticipantId;
+        // Keep the local tile's data-peer-id stable to avoid selector issues on rejoin
       }
       setStatus(`参加しました: ${message.room_code}`);
       return; }

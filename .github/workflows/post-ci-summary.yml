@@ -1,0 +1,73 @@
+name: Post CI summary to PR
+
+on:
+  check_suite:
+    types: [completed]
+
+permissions:
+  checks: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  post-summary:
+    name: Post or update CI summary comment on PRs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post/update CI summary on PRs
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const checkSuite = github.context.payload.check_suite;
+            if (!checkSuite) {
+              core.info('No check_suite payload; exiting.');
+              return;
+            }
+
+            const prs = checkSuite.pull_requests || [];
+            if (!prs || prs.length === 0) {
+              core.info('No pull requests associated with this check suite; skipping.');
+              return;
+            }
+
+            const owner = github.context.repo.owner;
+            const repo = github.context.repo.repo;
+            const checkSuiteId = checkSuite.id;
+
+            // List check runs for this suite
+            const runsResp = await github.rest.checks.listForSuite({
+              owner,
+              repo,
+              check_suite_id: checkSuiteId,
+              per_page: 100
+            });
+            const checkRuns = runsResp.data.check_runs || [];
+
+            const conclusion = checkSuite.conclusion || 'unknown';
+            let summary = `<!-- ci-summary -->\n## CI summary for commit \`${checkSuite.head_sha}\`\n**Check suite conclusion:** ${conclusion}\n\n| Check | Status |\n|---|---|\n`;
+
+            for (const r of checkRuns) {
+              const status = r.conclusion || r.status || 'unknown';
+              const name = r.name || r.external_id || 'Unnamed check';
+              const url = r.html_url || `https://github.com/${owner}/${repo}/commit/${checkSuite.head_sha}/checks`;
+              summary += `| [${name}](${url}) | ${status} |\n`;
+            }
+
+            summary += `\nView full details: https://github.com/${owner}/${repo}/commit/${checkSuite.head_sha}/checks\n\n_This comment is posted automatically._`;
+
+            for (const pr of prs) {
+              const prNumber = pr.number;
+
+              // Find existing CI summary comment (by marker) and update it; otherwise create a new comment
+              const comments = await github.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100 });
+              const existing = comments.data.find(c => c.body && c.body.includes('<!-- ci-summary -->') && c.user && (c.user.type === 'Bot' || c.user.login === 'github-actions[bot]'));
+
+              if (existing) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body: summary });
+                core.info(`Updated CI summary comment on PR #${prNumber}`);
+              } else {
+                await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body: summary });
+                core.info(`Posted CI summary comment on PR #${prNumber}`);
+              }
+            }

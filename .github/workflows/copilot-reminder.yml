@@ -1,0 +1,20 @@
+name: Copilot Review Reminder
+on:
+  workflow_dispatch: {}
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post Copilot reminder
+        uses: peter-evans/create-or-update-comment@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            :robot: このリポジトリでは PR マージ前に GitHub Copilot のレビュー提案を考慮することを推奨しています。
+            管理者はリポジトリ設定で Copilot を有効化すると、Copilot の提案を自動的に表示できます。

@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
-    name: Unit + E2E Tests
+  unit-tests:
+    name: Unit Tests
     runs-on: ubuntu-latest
     env:
       PYTHONPATH: ${{ github.workspace }}
@@ -26,25 +26,60 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-cov httpx playwright
-          python -m playwright install --with-deps chromium
+          pip install pytest pytest-cov httpx
 
-      - name: Run tests with coverage
+      - name: Run unit tests with coverage
         run: |
           pytest --maxfail=1 --disable-warnings --cov=app --cov-branch --cov-report=xml
 
-      - name: Check coverage thresholds
+      - name: Check coverage thresholds and TCR
         run: |
           python - <<'PY'
-          import xml.etree.ElementTree as ET, sys
-          tree=ET.parse('coverage.xml')
-          root=tree.getroot()
+          import xml.etree.ElementTree as ET, sys, os
+          tree = ET.parse('coverage.xml')
+          root = tree.getroot()
           pkg = root.find('packages').find('package')
-          line_rate=float(pkg.get('line-rate'))*100
-          branch_rate=float(pkg.get('branch-rate'))*100
+          line_rate = float(pkg.get('line-rate'))*100
+          branch_rate = float(pkg.get('branch-rate'))*100
           print(f'Line coverage: {line_rate:.1f}%, Branch coverage: {branch_rate:.1f}%')
+
           if line_rate < 90.0 or branch_rate < 80.0:
               print('Coverage thresholds not met', file=sys.stderr)
+              sys.exit(1)
+
+          def count_nonempty_py_lines(root_dir):
+              total = 0
+              for dirpath, dirnames, filenames in os.walk(root_dir):
+                  dirnames[:] = [d for d in dirnames if not d.startswith('.') and d != '__pycache__']
+                  for fname in filenames:
+                      if fname.endswith('.py'):
+                          p = os.path.join(dirpath, fname)
+                          try:
+                              with open(p, 'r', encoding='utf-8') as fh:
+                                  for ln in fh:
+                                      if ln.strip():
+                                          total += 1
+                          except Exception:
+                              with open(p, 'rb') as fh:
+                                  for b in fh:
+                                      if b.strip():
+                                          total += 1
+              return total
+
+          tests_lines = count_nonempty_py_lines('tests') if os.path.isdir('tests') else 0
+          app_lines = count_nonempty_py_lines('app') if os.path.isdir('app') else 0
+
+          print(f'Test lines (non-empty): {tests_lines}, App lines (non-empty): {app_lines}')
+          if app_lines == 0:
+              print('No source lines found to compute TCR', file=sys.stderr)
+              sys.exit(1)
+          tcr = tests_lines / float(app_lines)
+          print(f'Test-to-Code Ratio (TCR): {tcr:.2f}')
+
+          min_tcr = 1.8
+          max_tcr = 2.5
+          if tcr < min_tcr or tcr > max_tcr:
+              print(f'TCR {tcr:.2f} outside allowed range [{min_tcr}, {max_tcr}]', file=sys.stderr)
               sys.exit(1)
           PY
 
@@ -53,3 +88,42 @@ jobs:
         with:
           name: coverage-xml
           path: coverage.xml
+
+  e2e-tests:
+    name: E2E Tests (Playwright)
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install playwright pytest
+
+      - name: Install Playwright browsers and deps
+        run: |
+          python -m playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        run: |
+          pytest --maxfail=1 --disable-warnings -q tests/e2e -k test_browser_playwright
+
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: |
+            /tmp/playwright-trace-*.zip
+            /tmp/e2e-page1-*.png
+            /tmp/e2e-page2-*.png
