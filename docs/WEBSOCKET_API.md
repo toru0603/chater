@@ -26,20 +26,20 @@
 2. サーバ -> クライアント
 
 - joined
-  - 形式: {"type": "joined", "room_code": "...", "participant_id": "...", "role": "host|participant", "name": "..."}
-  - 備考: join 成功時に送られる
+  - 形式: {"type": "joined", "room_code": "...", "participant_id": "...", "role": "host|participant", "name": "...", "color": "#rrggbb"}
+  - 備考: join 成功時に送られる。`color` は任意フィールドで、参加者に割り当てられた表示色です。
 
 - waiting
   - 形式: {"type": "waiting", "room_code": "...", "message": "..."}
   - 備考: まだ他の参加者がいない場合に返される
 
 - participants
-  - 形式: {"type": "participants", "room_code": "...", "participants": [{"id": "...", "name": "...", "role": "..."}, ...]}
-  - 備考: 新規参加者に既存メンバーの一覧を返す
+  - 形式: {"type": "participants", "room_code": "...", "participants": [{"id": "...", "name": "...", "role": "...", "color": "#rrggbb"}, ...]}
+  - 備考: 新規参加者に既存メンバーの一覧を返す。各参加者オブジェクトは `color` を含む場合があります。
 
 - participant-joined
-  - 形式: {"type": "participant-joined", "id": "...", "name": "...", "role": "..."}
-  - 備考: 既存参加者へ新規参加者を通知する
+  - 形式: {"type": "participant-joined", "id": "...", "name": "...", "role": "...", "color": "#rrggbb"}
+  - 備考: 既存参加者へ新規参加者を通知する。`color` が含まれる場合、クライアントは表示に利用できます。
 
 - participant-left
   - 形式: {"type": "participant-left", "id": "...", "name": "..."}

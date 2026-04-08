@@ -64,6 +64,6 @@ def test_room_full_error():
         asyncio.run(manager.add_participant("room2", "overflow", ws_extra))
 
 
-def test_get_peer_none_when_not_found():
+def test_get_participant_none_when_not_found():
     manager = RoomManager()
     assert asyncio.run(manager.get_participant("nope")) is None

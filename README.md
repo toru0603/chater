@@ -60,12 +60,13 @@ pytest -q
 
 ### サーバ -> クライアント（主なメッセージ）
 
-- joined: {"type": "joined", "room_code": ..., "participant_id": ..., "role": ..., "name": ...}
+- joined: {"type": "joined", "room_code": ..., "participant_id": ..., "role": ..., "name": ..., "color": ...}
 - waiting: {"type": "waiting", "room_code": ..., "message": ...}
-- participants: {"type": "participants", "room_code": ..., "participants": [{"id": ..., "name": ..., "role": ...}, ...]}
-- participant-joined: {"type": "participant-joined", "id": ..., "name": ..., "role": ...}
+- participants: {"type": "participants", "room_code": ..., "participants": [{"id": ..., "name": ..., "role": ..., "color": ...}, ...]}
+- participant-joined: {"type": "participant-joined", "id": ..., "name": ..., "role": ..., "color": ...}
 - participant-left: {"type": "participant-left", "id": ..., "name": ...}
 - signal: {"type": "signal", "signal_type": "offer|answer|candidate", "data": ..., "from": "<sender_id>", "from_name": "<sender_name>"}
+- 注: `color` は `joined`、`participants[*]`、`participant-joined` に含まれます。チャット関連のブロードキャストでも `color` が含まれる場合があるため、クライアント側では利用可能な追加フィールドとして扱ってください（旧サーバとの互換のため未設定の可能性は考慮してください）。
 
 ### 備考
 
@@ -77,4 +78,3 @@ pytest -q
 
 MIT
 
-ci: confirm CI runs on PR

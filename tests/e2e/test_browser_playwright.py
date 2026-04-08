@@ -126,9 +126,9 @@ def test_browser_playwright_match_and_leave(server):
         page1.fill("#name", "Alice")
         page1.fill("#roomCode", "e2e-room")
         page1.click("#joinBtn")
-        # DEBUG: small pause and print status
         time.sleep(1)
-        print('DEBUG: page1 status after join ->', page1.text_content('#status'))
+        if os.environ.get('DEBUG_E2E'):
+            print('DEBUG: page1 status after join ->', page1.text_content('#status'))
 
         # Should see the waiting message
         page1.wait_for_function(
@@ -143,8 +143,9 @@ def test_browser_playwright_match_and_leave(server):
         page2.fill("#roomCode", "e2e-room")
         page2.click("#joinBtn")
         time.sleep(1)
-        print('DEBUG: page1 status after page2 join ->', page1.text_content('#status'))
-        print('DEBUG: page2 status after join ->', page2.text_content('#status'))
+        if os.environ.get('DEBUG_E2E'):
+            print('DEBUG: page1 status after page2 join ->', page1.text_content('#status'))
+            print('DEBUG: page2 status after join ->', page2.text_content('#status'))
 
         # Expect at least one page to reflect the presence of the peer (robust against timing)
         deadline = time.time() + 15.0
