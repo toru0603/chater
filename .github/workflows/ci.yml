@@ -201,6 +201,15 @@ jobs:
             const e2eRun = runs.data.check_runs.find(r=>r.name==='E2E Tests (Playwright)');
             if (e2eRun) { await github.rest.checks.update({owner,repo,check_run_id: e2eRun.id, output:{title:'E2E Tests summary',summary:md}}); } else { core.info('E2E run not found'); }
 
+      - name: Collect E2E outputs
+        if: always()
+        run: |
+          set -eux
+          # Copy any generated e2e-results.xml (wherever it was written) to repo root
+          find "$GITHUB_WORKSPACE" -type f -name 'e2e-results.xml' -exec cp {} "$GITHUB_WORKSPACE/e2e-results.xml" \; || true
+          # Ensure e2e-summary.json exists (created earlier or create placeholder)
+          if [ ! -f e2e-summary.json ]; then echo '{"tests":"missing"}' > e2e-summary.json; fi
+
       - name: Upload E2E artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -209,6 +218,7 @@ jobs:
           path: |
             e2e-summary.json
             e2e-results.xml
+            **/e2e-results.xml
             /tmp/playwright-trace-*.zip
             /tmp/e2e-page1-*.png
             /tmp/e2e-page2-*.png
