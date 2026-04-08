@@ -127,9 +127,8 @@ def test_browser_playwright_match_and_leave(server):
         context = browser.new_context()
         context.tracing.start(screenshots=True, snapshots=True)
         context.add_init_script(init_script)
+        page1 = context.new_page()
 
-        if os.environ.get("DEBUG_E2E"):
-            page1.on("console", _p1_console)
         # capture console logs from the page to help debugging message delivery
         def _p1_console(msg):
             try:
@@ -137,6 +136,7 @@ def test_browser_playwright_match_and_leave(server):
             except Exception:
                 text = str(msg)
             print('PAGE1 console:', text)
+
         page1.on("console", _p1_console)
         page1.goto(BASE_URL, wait_until="networkidle")
         # DEBUG: dump a snippet of the served app.js to ensure it's the edited version

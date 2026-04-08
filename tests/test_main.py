@@ -22,7 +22,7 @@ def test_join_wait_and_match():
 
         with client.websocket_connect("/ws/room1") as ws2:
             ws2.send_json({"type": "join", "name": "Bob"})
-            _ = ws2.receive_json()
+            joined2 = ws2.receive_json()
             assert joined2["type"] == "joined"
 
             # ws2 should receive participants/matched about existing participants
