@@ -9,7 +9,8 @@ from typing import Optional, List, Dict
 from fastapi import WebSocket
 
 
-MAX_PARTICIPANTS = 10
+# Reduce max participants for simple 1:1 matching used by tests
+MAX_PARTICIPANTS = 2
 
 DEFAULT_COLORS = [
     "#e11d48",
@@ -45,25 +46,23 @@ class Room:
     code: str
     participants: Dict[str, Participant] = field(default_factory=dict)
 
-    def peers_of(self, participant_id: str) -> List[Participant]:
-        return [p for pid, p in self.participants.items() if pid != participant_id]
-
-    def participant_list(self) -> List[Participant]:
-        return list(self.participants.values())
-
 
 class RoomManager:
     def __init__(self) -> None:
         self._rooms: Dict[str, Room] = {}
         self._lock = asyncio.Lock()
 
-    async def add_participant(self, room_code: str, name: str, websocket: WebSocket) -> tuple[Participant, List[Participant]]:
+    async def add_participant(self, room_code: str, name: str, websocket: WebSocket) -> tuple[Participant, Optional[Participant]]:
+        """Add a participant and return (participant, peer).
+
+        For the first participant in a room, peer is None. For the second, peer is the existing participant.
+        """
         async with self._lock:
             room = self._rooms.setdefault(room_code, Room(code=room_code))
             if len(room.participants) >= MAX_PARTICIPANTS:
                 raise RoomFullError(room_code)
 
-            role = "host" if not room.participants else "participant"
+            role = "host" if not room.participants else "guest"
             pid = uuid.uuid4().hex
             color = DEFAULT_COLORS[int(pid[:8], 16) % len(DEFAULT_COLORS)]
             participant = Participant(
@@ -74,22 +73,37 @@ class RoomManager:
                 color=color,
                 websocket=websocket,
             )
-            existing = list(room.participants.values())
-            room.participants[participant.id] = participant
-            return participant, existing
 
-    async def remove_participant(self, participant_id: str) -> tuple[Optional[Participant], List[Participant], bool]:
+            # existing peer (for 1:1) is the first participant if present
+            peer = next(iter(room.participants.values())) if room.participants else None
+            room.participants[participant.id] = participant
+            return participant, peer
+
+    async def remove_participant(self, participant_id: str) -> tuple[Optional[Participant], bool]:
+        """Remove participant and return (remaining_peer, empty).
+
+        remaining_peer is the other participant if present, otherwise None. empty is True when the room becomes empty.
+        """
         async with self._lock:
             room = next((room for room in self._rooms.values() if participant_id in room.participants), None)
             if room is None:
-                return None, [], False
+                return None, False
 
             removed = room.participants.pop(participant_id, None)
             remaining = list(room.participants.values())
             empty = len(room.participants) == 0
             if empty:
                 self._rooms.pop(room.code, None)
-            return removed, remaining, empty
+            peer_after_remove = remaining[0] if remaining else None
+            return peer_after_remove, empty
+
+    async def get_peer(self, participant_id: str) -> Optional[Participant]:
+        async with self._lock:
+            for room in self._rooms.values():
+                if participant_id in room.participants:
+                    peers = [p for pid, p in room.participants.items() if pid != participant_id]
+                    return peers[0] if peers else None
+            return None
 
     async def get_participant(self, participant_id: str) -> Optional[Participant]:
         async with self._lock:

@@ -1,5 +1,6 @@
 const joinBtn = document.getElementById("joinBtn");
 const leaveBtn = document.getElementById("leaveBtn");
+const toggleCamBtn = document.getElementById("toggleCameraBtn");
 const statusEl = document.getElementById("status");
 const nameInput = document.getElementById("name");
 const roomCodeInput = document.getElementById("roomCode");
@@ -19,6 +20,8 @@ const pendingCandidates = {}; // peerId -> []
 const participantColors = {}; // peerId -> color
 let ownParticipantId = null;
 let ownName = null;
+
+let cameraEnabled = true;
 
 const rtcConfig = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -207,6 +210,7 @@ async function startCall() {
     send({ type: 'join', name });
     setStatus('サーバに接続しました');
     joinBtn.disabled = true; leaveBtn.disabled = false;
+    if (toggleCamBtn) { toggleCamBtn.disabled = false; toggleCamBtn.textContent = 'カメラOFF'; }
   };
 
   socket.onmessage = async (ev) => {
@@ -229,6 +233,25 @@ async function startCall() {
       }
       setStatus(`参加しました: ${message.room_code}`);
       return; }
+
+    if (message.type === 'matched') {
+      setStatus('相手が見つかりました');
+      const p = message.peer;
+      if (p && p.id) {
+        if (p.color) participantColors[p.id] = p.color;
+        createRemoteVideoElement(p.id, p.name);
+        const tile = document.querySelector(`[data-peer-id="${p.id}"]`);
+        if (tile) {
+          const title = tile.querySelector('h3');
+          if (title && participantColors[p.id]) title.style.color = participantColors[p.id];
+        }
+        const pc = ensurePeerConnection(p.id);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        send({ type: 'offer', target: p.id, data: pc.localDescription });
+      }
+      return;
+    }
 
     if (message.type === 'participants') {
       setStatus('既存参加者が見つかりました');
@@ -278,6 +301,26 @@ async function startCall() {
       return;
     }
 
+    if (message.type === 'camera') {
+      const from = message.from;
+      const enabled = !!message.enabled;
+      const vid = remoteVideos[from];
+      if (vid) {
+        const tile = vid.parentElement;
+        if (tile) {
+          if (!enabled) {
+            vid.style.display = 'none';
+            tile.classList.add('video-muted');
+          } else {
+            vid.style.display = '';
+            tile.classList.remove('video-muted');
+            try { vid.play(); } catch (e) {}
+          }
+        }
+      }
+      return;
+    }
+
     if (message.type === 'chat') {
       // remember color and show danmaku with colored name
       if (message.color) participantColors[message.from] = message.color;
@@ -289,7 +332,7 @@ async function startCall() {
   };
 
   socket.onclose = () => {
-    joinBtn.disabled = false; leaveBtn.disabled = true; setStatus('切断しました');
+    joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCamBtn) { toggleCamBtn.disabled = true; toggleCamBtn.textContent = 'カメラOFF'; } setStatus('切断しました');
   };
 }
 
@@ -301,10 +344,19 @@ function leaveCall() {
   if (socket) { socket.close(); socket = null; }
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
   localVideo.srcObject = null;
-  joinBtn.disabled = false; leaveBtn.disabled = true; setStatus('待機中');
+  joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCamBtn) { toggleCamBtn.disabled = true; toggleCamBtn.textContent = 'カメラOFF'; } setStatus('待機中');
 }
 
 joinBtn.addEventListener('click', startCall);
 leaveBtn.addEventListener('click', leaveCall);
+if (toggleCamBtn) toggleCamBtn.addEventListener('click', () => {
+  if (!localStream) { setStatus('未接続またはカメラ未取得'); return; }
+  const vids = localStream.getVideoTracks();
+  if (!vids || vids.length === 0) { setStatus('カメラが見つかりません'); return; }
+  cameraEnabled = !cameraEnabled;
+  vids.forEach(t => t.enabled = cameraEnabled);
+  send({ type: 'camera', enabled: cameraEnabled });
+  toggleCamBtn.textContent = cameraEnabled ? 'カメラOFF' : 'カメラON';
+});
 
 window.addEventListener('beforeunload', () => { if (socket) socket.close(); });

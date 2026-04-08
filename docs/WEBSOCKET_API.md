@@ -27,6 +27,10 @@
   - 目的: チャットメッセージをブロードキャストする
   - 形式: {"type": "chat", "text": "..."}
 
+- camera
+  - 目的: カメラの on/off をルーム内の他者に通知する
+  - 形式: {"type": "camera", "enabled": true|false}
+
 2. サーバ -> クライアント
 
 - joined
