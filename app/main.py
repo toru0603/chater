@@ -125,6 +125,7 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
             # audio/camera toggle messages - broadcast to peers
             if message_type in {"audio", "camera"}:
                 enabled = message.get("enabled")
+                enabled_bool: bool | None = None
                 # coerce string true/false to boolean
                 if isinstance(enabled, str):
                     if enabled.lower() in ("true", "1", "yes", "on"):
