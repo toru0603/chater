@@ -23,7 +23,7 @@ jobs:
           fi
 
       - name: Upload debug artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: post-ci-debug-minimal
           path: artifacts

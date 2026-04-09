@@ -110,7 +110,7 @@ jobs:
 
       - name: Upload debug artifacts (ci-artifacts and ci-artifacts.json)
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: post-ci-debug
           path: |
