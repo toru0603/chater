@@ -3,6 +3,10 @@ name: Post CI summary to PR
 on:
   check_suite:
     types: [completed]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
 
 permissions:
   checks: read
@@ -15,52 +19,103 @@ jobs:
     name: Post or update CI summary comment on PRs
     runs-on: ubuntu-latest
     steps:
-      - name: Gather workflow run and artifact IDs for this check suite
+      - name: Gather workflow run and artifact IDs for this check suite or workflow run
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const payload = github.context.payload;
-            const checkSuite = payload.check_suite;
-            if (!checkSuite) { core.info('No check_suite payload; exiting.'); return; }
-            const prs = checkSuite.pull_requests || [];
-            if (!prs || prs.length === 0) { core.info('No pull requests associated with this check suite; skipping.'); return; }
+            const payload = github.context.payload || {};
             const owner = github.context.repo.owner;
             const repo = github.context.repo.repo;
-            const headSha = checkSuite.head_sha || github.context.sha || '';
-            core.info(`Looking up workflow runs for head sha: ${headSha}`);
-
-            const runsResp = await github.rest.actions.listWorkflowRunsForRepo({ owner, repo, head_sha: headSha, per_page: 50 });
-            const runs = runsResp.data.workflow_runs || [];
-
-            // Choose the most-recent completed workflow run for this commit (prefer workflow named "CI")
+            let prs = [];
+            let headSha = github.context.sha || '';
             let targetRun = null;
-            const completed = runs.filter(r => r.status === 'completed');
-            if (completed.length > 0) {
-              const ciRuns = completed.filter(r => (r.name === 'CI' || r.workflow_name === 'CI'));
-              const candidates = ciRuns.length ? ciRuns : completed;
-              candidates.sort((a,b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
-              targetRun = candidates[0];
-            } else if (runs.length > 0) {
-              runs.sort((a,b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
-              targetRun = runs[0];
+
+            if (payload.check_suite) {
+              const checkSuite = payload.check_suite;
+              prs = checkSuite.pull_requests || [];
+              headSha = checkSuite.head_sha || headSha;
+              core.info(`check_suite event: head_sha=${headSha}`);
+              const runsResp = await github.rest.actions.listWorkflowRunsForRepo({ owner, repo, head_sha: headSha, per_page: 50 });
+              const runs = runsResp.data.workflow_runs || [];
+              const completed = runs.filter(r => r.status === 'completed');
+              if (completed.length > 0) {
+                const ciRuns = completed.filter(r => (r.name === 'CI' || r.workflow_name === 'CI' || r.name === 'ci' || r.workflow_name === 'ci'));
+                const candidates = ciRuns.length ? ciRuns : completed;
+                candidates.sort((a,b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+                targetRun = candidates[0];
+              } else if (runs.length > 0) {
+                runs.sort((a,b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+                targetRun = runs[0];
+              }
+            } else if (payload.workflow_run) {
+              const wr = payload.workflow_run;
+              prs = wr.pull_requests || [];
+              headSha = wr.head_sha || (wr.head_commit && wr.head_commit.id) || headSha;
+              core.info(`workflow_run event: head_sha=${headSha}, run_id=${wr.id}`);
+              targetRun = { id: wr.id, updated_at: wr.updated_at };
+            } else {
+              core.info('No check_suite or workflow_run payload; continuing with empty PR list.');
+            }
+
+            // Fallback: try to find PRs associated with the commit if none found
+            if ((!prs || prs.length === 0) && headSha) {
+              try {
+                const prsResp = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: headSha });
+                prs = prsResp.data || [];
+                core.info(`Found ${prs.length} PR(s) associated with commit ${headSha}`);
+              } catch (e) {
+                core.info(`Error looking up PRs for commit ${headSha}: ${e.message || e}`);
+              }
             }
 
             if (!targetRun) {
-              core.info('No workflow run found for this head sha');
-              fs.writeFileSync('ci-artifacts.json', JSON.stringify({ prs: prs.map(p=>p.number) }));
+              core.info('No workflow run id found; writing ci-artifacts.json with PRs only.');
+              const out = { prs: prs.map(p => p.number), run_id: null, artifacts: {}, head_sha: headSha, run_updated_at: null };
+              fs.writeFileSync('ci-artifacts.json', JSON.stringify(out, null, 2));
               return;
             }
 
-            core.info(`Found workflow run id=${targetRun.id}, name=${targetRun.name}, updated_at=${targetRun.updated_at}`);
+            core.info(`Found workflow run id=${targetRun.id}`);
             const artifactsResp = await github.rest.actions.listWorkflowRunArtifacts({ owner, repo, run_id: targetRun.id });
             const artifacts = artifactsResp.data.artifacts || [];
             const mapping = {};
             for (const a of artifacts) mapping[a.name] = a.id;
-            const out = { prs: prs.map(p=>p.number), run_id: targetRun.id, artifacts: mapping, head_sha: headSha, run_updated_at: targetRun.updated_at };
+            const out = { prs: prs.map(p => p.number), run_id: targetRun.id, artifacts: mapping, head_sha: headSha, run_updated_at: targetRun.updated_at };
             fs.writeFileSync('ci-artifacts.json', JSON.stringify(out, null, 2));
             core.info('Wrote ci-artifacts.json');
+
+      - name: Ensure ci-artifacts.json exists
+        if: always()
+        run: |
+          # Ensure downstream steps can proceed even if the gather step failed
+          if [ ! -f ci-artifacts.json ]; then
+            echo "{\"prs\":[],\"run_id\":null,\"artifacts\":{},\"head_sha\":\"${GITHUB_SHA}\",\"run_updated_at\":null}" > ci-artifacts.json || true
+          fi
+
+      - name: Save runner event payload and environment for debugging
+        if: always()
+        run: |
+          mkdir -p ci-artifacts
+          echo "GITHUB_SHA=${GITHUB_SHA}" > ci-artifacts/debug.txt
+          echo "GITHUB_REF=${GITHUB_REF}" >> ci-artifacts/debug.txt
+          echo "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" >> ci-artifacts/debug.txt
+          echo "GITHUB_EVENT_NAME=${GITHUB_EVENT_NAME:-}" >> ci-artifacts/debug.txt
+          if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "${GITHUB_EVENT_PATH:-}" ]; then
+            cp "${GITHUB_EVENT_PATH}" ci-artifacts/event.json || true
+          fi
+          # also copy ci-artifacts.json so we can inspect it
+          cp -f ci-artifacts.json ci-artifacts/ci-artifacts.json || true
+
+      - name: Upload debug artifacts (ci-artifacts and ci-artifacts.json)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-ci-debug
+          path: |
+            ci-artifacts
+            ci-artifacts.json
 
       - name: Download artifacts and extract summaries
         if: always()
@@ -118,7 +173,6 @@ def parse_junit(path):
         root=ET.parse(path).getroot()
         # handle testsuites or testsuite
         if root.tag == 'testsuites':
-            # try aggregated attrs
             tests=int(root.get('tests') or 0)
             failures=int(root.get('failures') or 0)
             errors=int(root.get('errors') or 0)
@@ -177,8 +231,8 @@ PY
               try {
                 const u = JSON.parse(fs.readFileSync('ci-artifacts/unit-summary.json','utf8'));
                 md += '### Unit Tests\n';
-                if (u.tests && u.passed !== undefined) md += `Passed: **${u.passed}/${u.tests}**\n\n`;
-                if (u.coverage_line) md += `Line coverage: **${u.coverage_line}%**, Branch coverage: **${u.coverage_branch}%**\n\n`;
+                if (typeof u.tests !== 'undefined' && typeof u.passed !== 'undefined') md += `Passed: **${u.passed}/${u.tests}**\n\n`;
+                if (typeof u.coverage_line !== 'undefined' || typeof u.coverage_branch !== 'undefined') md += `Line coverage: **${u.coverage_line || 'N/A'}%**, Branch coverage: **${u.coverage_branch || 'N/A'}%**\n\n`;
               } catch (e) { md += 'Failed to read unit-summary.json\n\n'; }
             }
 
@@ -186,7 +240,7 @@ PY
               try {
                 const e = JSON.parse(fs.readFileSync('ci-artifacts/e2e-summary.json','utf8'));
                 md += '### E2E Tests\n';
-                if (e.tests && e.passed !== undefined) md += `Passed: **${e.passed}/${e.tests}**\n\n`;
+                if (typeof e.tests !== 'undefined' && typeof e.passed !== 'undefined') md += `Passed: **${e.passed}/${e.tests}**\n\n`;
               } catch (e) { md += 'Failed to read e2e-summary.json\n\n'; }
             }
 
