@@ -1,0 +1,29 @@
+name: Post CI summary debug
+
+on:
+  push:
+    branches:
+      - chore/fix-post-ci-summary-20260408
+  workflow_dispatch:
+
+jobs:
+  capture:
+    name: Capture event payload and upload
+    runs-on: ubuntu-latest
+    steps:
+      - name: Save event payload and env
+        run: |
+          mkdir -p artifacts
+          echo "GITHUB_SHA=${GITHUB_SHA}" > artifacts/debug.txt
+          echo "GITHUB_REF=${GITHUB_REF}" >> artifacts/debug.txt
+          echo "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" >> artifacts/debug.txt
+          echo "GITHUB_EVENT_NAME=${GITHUB_EVENT_NAME:-}" >> artifacts/debug.txt
+          if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "${GITHUB_EVENT_PATH:-}" ]; then
+            cp "${GITHUB_EVENT_PATH}" artifacts/event.json || true
+          fi
+
+      - name: Upload debug artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: post-ci-debug-minimal
+          path: artifacts
