@@ -35,6 +35,26 @@ pytest -q
 - fix/<短い説明>
 - docs/<短い説明>
 
+## ブランチ作成の推奨
+
+新しい作業ブランチは必ず origin/main（リモートの main）から作成してください。こうすることで、マージ時の競合やブランチ保護ルール（例: 'Require status checks'）との不整合を防げます。
+
+推奨コマンド例:
+
+# リモートの main から直接作る
+git fetch origin
+git checkout -b feature/your-short-description origin/main
+
+# ローカル main を更新してから作る場合
+git checkout main
+git pull origin main
+git checkout -b feature/your-short-description
+
+PR を作成する前に main を取り込んでおく（rebase または merge）ことを推奨します:
+
+git fetch origin
+git rebase origin/main
+
 ## コミットメッセージ
 
 - 1 行の要約（50 文字以内）
