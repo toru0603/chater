@@ -86,6 +86,14 @@ jobs:
             fs.writeFileSync('ci-artifacts.json', JSON.stringify(out, null, 2));
             core.info('Wrote ci-artifacts.json');
 
+      - name: Ensure ci-artifacts.json exists
+        if: always()
+        run: |
+          # Ensure downstream steps can proceed even if the gather step failed
+          if [ ! -f ci-artifacts.json ]; then
+            echo "{\"prs\":[],\"run_id\":null,\"artifacts\":{},\"head_sha\":\"${GITHUB_SHA}\",\"run_updated_at\":null}" > ci-artifacts.json || true
+          fi
+
       - name: Download artifacts and extract summaries
         if: always()
         env:
