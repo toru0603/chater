@@ -189,6 +189,19 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                     await peer.websocket.send_json({"type": "peer-left", "id": participant_id})
                 except Exception:
                     pass
+            # notify remaining participants about the departed participant
+            if removed is not None:
+                for p in remaining:
+                    try:
+                        await p.websocket.send_json(
+                            {
+                                "type": "participant-left",
+                                "id": removed.id,
+                                "name": removed.name,
+                            }
+                        )
+                    except Exception:
+                        pass
             # ensure websocket is closed
             try:
                 await websocket.close()
