@@ -94,6 +94,29 @@ jobs:
             echo "{\"prs\":[],\"run_id\":null,\"artifacts\":{},\"head_sha\":\"${GITHUB_SHA}\",\"run_updated_at\":null}" > ci-artifacts.json || true
           fi
 
+      - name: Save runner event payload and environment for debugging
+        if: always()
+        run: |
+          mkdir -p ci-artifacts
+          echo "GITHUB_SHA=${GITHUB_SHA}" > ci-artifacts/debug.txt
+          echo "GITHUB_REF=${GITHUB_REF}" >> ci-artifacts/debug.txt
+          echo "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" >> ci-artifacts/debug.txt
+          echo "GITHUB_EVENT_NAME=${GITHUB_EVENT_NAME:-}" >> ci-artifacts/debug.txt
+          if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "${GITHUB_EVENT_PATH:-}" ]; then
+            cp "${GITHUB_EVENT_PATH}" ci-artifacts/event.json || true
+          fi
+          # also copy ci-artifacts.json so we can inspect it
+          cp -f ci-artifacts.json ci-artifacts/ci-artifacts.json || true
+
+      - name: Upload debug artifacts (ci-artifacts and ci-artifacts.json)
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: post-ci-debug
+          path: |
+            ci-artifacts
+            ci-artifacts.json
+
       - name: Download artifacts and extract summaries
         if: always()
         env:
