@@ -224,7 +224,7 @@ PY
               } catch (e) { core.info(`PR lookup failed: ${e.message || e}`); }
             }
             if (!prs || prs.length === 0) { core.info('No associated PRs found; skipping comment'); return; }
-            let md = `<!-- ci-summary -->\n## CI summary for commit `${headSha}`\n\n`;
+            let md = `<!-- ci-summary -->\n## CI summary for commit \`${headSha}\`\n\n`;
             if (fs.existsSync('ci-artifacts/unit-summary.json')) {
               try {
                 const u = JSON.parse(fs.readFileSync('ci-artifacts/unit-summary.json','utf8'));
