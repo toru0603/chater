@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .room_manager import RoomFullError, RoomManager
+from .room_manager import RoomManager
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
