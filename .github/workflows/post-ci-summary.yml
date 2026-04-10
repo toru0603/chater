@@ -1,11 +1,8 @@
-name: Post CI summary to PR
+name: Post CI summary to PR (disabled - superseded by post-ci-summary-on-ci-success.yml)
 
+# This workflow has been superseded by post-ci-summary-on-ci-success.yml which handles
+# both success and failure cases and includes TCR metrics. Kept here for reference only.
 on:
-  check_suite:
-    types: [completed]
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
   workflow_dispatch:
 
 permissions:
