@@ -344,6 +344,11 @@ jobs:
           path: ci-artifacts/e2e
         continue-on-error: true
 
+      - name: Debug artifact contents
+        run: |
+          echo "=== ci-artifacts tree ==="
+          find ci-artifacts -type f 2>/dev/null || echo "(empty)"
+
       - name: Compute TCR
         run: |
           python - <<'PY'
