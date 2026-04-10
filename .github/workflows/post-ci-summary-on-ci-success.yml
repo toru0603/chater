@@ -93,14 +93,14 @@ jobs:
           set -euo pipefail
           if [ ! -f ci-artifacts.json ]; then echo "ci-artifacts.json not found; nothing to download"; exit 0; fi
           python - <<'PY' > /tmp/ci-artifact-list.txt
-import json
-with open('ci-artifacts.json') as f:
-    d=json.load(f)
-run_id=d.get('run_id')
-print(run_id if run_id is not None else '')
-for k,v in d.get('artifacts',{}).items():
-    print(f"{k}\t{v}")
-PY
+          import json
+          with open('ci-artifacts.json') as f:
+              d=json.load(f)
+          run_id=d.get('run_id')
+          print(run_id if run_id is not None else '')
+          for k,v in d.get('artifacts',{}).items():
+              print(f"{k}\t{v}")
+          PY
           run_id=$(sed -n '1p' /tmp/ci-artifact-list.txt | tr -d '\r' || true)
           if [ -z "$run_id" ]; then echo "No workflow run id found; skipping artifact download"; exit 0; fi
           mkdir -p ci-artifacts
@@ -130,46 +130,46 @@ PY
 
           if [ ! -f ci-artifacts/e2e-summary.json ]; then
             python - <<'PY'
-import os,xml.etree.ElementTree as ET,json,glob
+          import os,xml.etree.ElementTree as ET,json,glob
 
-def parse_junit(path):
-    try:
-        root=ET.parse(path).getroot()
-        if root.tag == 'testsuites':
-            tests=int(root.get('tests') or 0)
-            failures=int(root.get('failures') or 0)
-            errors=int(root.get('errors') or 0)
-            skipped=int(root.get('skipped') or 0)
-        else:
-            tests=int(root.get('tests') or 0)
-            failures=int(root.get('failures') or 0)
-            errors=int(root.get('errors') or 0)
-            skipped=int(root.get('skipped') or 0)
-        passed=tests - failures - errors - skipped
-        return {'tests':tests,'passed':passed,'failures':failures,'errors':errors,'skipped':skipped}
-    except Exception:
-        return None
+          def parse_junit(path):
+              try:
+                  root=ET.parse(path).getroot()
+                  if root.tag == 'testsuites':
+                      tests=int(root.get('tests') or 0)
+                      failures=int(root.get('failures') or 0)
+                      errors=int(root.get('errors') or 0)
+                      skipped=int(root.get('skipped') or 0)
+                  else:
+                      tests=int(root.get('tests') or 0)
+                      failures=int(root.get('failures') or 0)
+                      errors=int(root.get('errors') or 0)
+                      skipped=int(root.get('skipped') or 0)
+                  passed=tests - failures - errors - skipped
+                  return {'tests':tests,'passed':passed,'failures':failures,'errors':errors,'skipped':skipped}
+              except Exception:
+                  return None
 
-candidates = []
-for p in glob.glob('ci-artifacts/raw-xml/**/*.xml', recursive=True):
-    bn=os.path.basename(p).lower()
-    if 'e2e' in bn or 'playwright' in bn or 'e2e-results' in bn or 'e2e' in p.lower():
-        candidates.append(p)
-if not candidates:
-    for p in glob.glob('ci-artifacts/raw-xml/**/*results*.xml', recursive=True):
-        candidates.append(p)
-if not candidates:
-    for p in glob.glob('ci-artifacts/raw-xml/**/*.xml', recursive=True):
-        candidates.append(p)
+          candidates = []
+          for p in glob.glob('ci-artifacts/raw-xml/**/*.xml', recursive=True):
+              bn=os.path.basename(p).lower()
+              if 'e2e' in bn or 'playwright' in bn or 'e2e-results' in bn or 'e2e' in p.lower():
+                  candidates.append(p)
+          if not candidates:
+              for p in glob.glob('ci-artifacts/raw-xml/**/*results*.xml', recursive=True):
+                  candidates.append(p)
+          if not candidates:
+              for p in glob.glob('ci-artifacts/raw-xml/**/*.xml', recursive=True):
+                  candidates.append(p)
 
-for p in candidates:
-    res = parse_junit(p)
-    if res:
-        with open('ci-artifacts/e2e-summary.json','w') as f:
-            json.dump(res,f)
-        print('wrote e2e-summary.json from',p)
-        break
-PY
+          for p in candidates:
+              res = parse_junit(p)
+              if res:
+                  with open('ci-artifacts/e2e-summary.json','w') as f:
+                      json.dump(res,f)
+                  print('wrote e2e-summary.json from',p)
+                  break
+          PY
           fi
           echo "Extracted files:"; ls -lah ci-artifacts || true
 
@@ -177,34 +177,34 @@ PY
         if: always()
         run: |
           python - <<'PY'
-import os
+          import os
 
-def count_nonempty_py_lines(root):
-    cnt=0
-    if not os.path.isdir(root):
-        return 0
-    for dirpath, dirnames, filenames in os.walk(root):
-        for fn in filenames:
-            if not fn.endswith('.py'): continue
-            path=os.path.join(dirpath,fn)
-            try:
-                with open(path,'rb') as f:
-                    for line in f:
-                        if line.strip():
-                            cnt+=1
-            except Exception:
-                pass
-    return cnt
+          def count_nonempty_py_lines(root):
+              cnt=0
+              if not os.path.isdir(root):
+                  return 0
+              for dirpath, dirnames, filenames in os.walk(root):
+                  for fn in filenames:
+                      if not fn.endswith('.py'): continue
+                      path=os.path.join(dirpath,fn)
+                      try:
+                          with open(path,'rb') as f:
+                              for line in f:
+                                  if line.strip():
+                                      cnt+=1
+                      except Exception:
+                          pass
+              return cnt
 
-tests_lines = count_nonempty_py_lines('tests')
-app_lines = count_nonempty_py_lines('app')
-tcr = round(tests_lines / app_lines, 3) if app_lines else None
-res={'tests_lines':tests_lines,'app_lines':app_lines,'tcr':tcr}
-import json
-with open('/tmp/ci-metrics.json','w') as f:
-    json.dump(res,f)
-print(res)
-PY
+          tests_lines = count_nonempty_py_lines('tests')
+          app_lines = count_nonempty_py_lines('app')
+          tcr = round(tests_lines / app_lines, 3) if app_lines else None
+          res={'tests_lines':tests_lines,'app_lines':app_lines,'tcr':tcr}
+          import json
+          with open('/tmp/ci-metrics.json','w') as f:
+              json.dump(res,f)
+          print(res)
+          PY
 
       - name: Build and post CI summary comment
         if: always()
