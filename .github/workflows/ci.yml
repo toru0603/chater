@@ -334,14 +334,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: unit-artifacts
-          path: ci-artifacts
+          path: ci-artifacts/unit
         continue-on-error: true
 
       - name: Download e2e artifacts
         uses: actions/download-artifact@v4
         with:
           name: e2e-artifacts
-          path: ci-artifacts
+          path: ci-artifacts/e2e
         continue-on-error: true
 
       - name: Compute TCR
@@ -385,9 +385,9 @@ jobs:
 
             let md = `<!-- ci-summary -->\n## ${conclusionEmoji} CI テスト結果 (commit: \`${headSha.slice(0,7)}\`)\n\n`;
 
-            if (fs.existsSync('ci-artifacts/unit-summary.json')) {
+            if (fs.existsSync('ci-artifacts/unit/unit-summary.json')) {
               try {
-                const u = JSON.parse(fs.readFileSync('ci-artifacts/unit-summary.json', 'utf8'));
+                const u = JSON.parse(fs.readFileSync('ci-artifacts/unit/unit-summary.json', 'utf8'));
                 md += '### 🧪 Unit Tests\n';
                 if (typeof u.tests !== 'undefined' && typeof u.passed !== 'undefined') {
                   const icon = (u.failures || 0) + (u.errors || 0) > 0 ? '❌' : '✅';
@@ -404,9 +404,9 @@ jobs:
               md += '### 🧪 Unit Tests\n> 結果データなし\n\n';
             }
 
-            if (fs.existsSync('ci-artifacts/e2e-summary.json')) {
+            if (fs.existsSync('ci-artifacts/e2e/e2e-summary.json')) {
               try {
-                const e = JSON.parse(fs.readFileSync('ci-artifacts/e2e-summary.json', 'utf8'));
+                const e = JSON.parse(fs.readFileSync('ci-artifacts/e2e/e2e-summary.json', 'utf8'));
                 md += '### 🌐 E2E Tests\n';
                 if (typeof e.tests !== 'undefined' && typeof e.passed !== 'undefined') {
                   const icon = (e.failures || 0) + (e.errors || 0) > 0 ? '❌' : '✅';
