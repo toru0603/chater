@@ -312,10 +312,6 @@ jobs:
           path: |
             e2e-summary.json
             e2e-results.xml
-            **/e2e-results.xml
-            /tmp/playwright-trace-*.zip
-            /tmp/e2e-page1-*.png
-            /tmp/e2e-page2-*.png
 
   post-summary:
     name: Post CI test summary to PR
@@ -343,11 +339,6 @@ jobs:
           name: e2e-artifacts
           path: ci-artifacts/e2e
         continue-on-error: true
-
-      - name: Debug artifact contents
-        run: |
-          echo "=== ci-artifacts tree ==="
-          find ci-artifacts -type f 2>/dev/null || echo "(empty)"
 
       - name: Compute TCR
         run: |
