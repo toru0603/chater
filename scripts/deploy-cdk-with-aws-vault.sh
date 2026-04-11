@@ -51,8 +51,12 @@ echo "Detected AWS account: $ACCOUNT"
 echo "Bootstrapping CDK into aws://$ACCOUNT/$AWS_REGION"
 $AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk bootstrap aws://$ACCOUNT/$AWS_REGION --require-approval never
 
-# Deploy all stacks
-echo "Deploying CDK stacks (this may take several minutes)"
+# Deploy ApiStack first to avoid cross-stack export conflicts,
+# then deploy all stacks to apply any remaining updates.
+echo "Deploying ChaterApiStack first (removes cross-stack references if any)"
+$AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk deploy ChaterApiStack --require-approval never
+
+echo "Deploying all remaining CDK stacks"
 $AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk deploy --all --require-approval never
 
 echo "CDK deploy finished. Review output above for stack outputs and endpoints."
