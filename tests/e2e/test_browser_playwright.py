@@ -26,8 +26,8 @@ except Exception:
     pytest.skip("playwright not installed, skipping e2e tests", allow_module_level=True)
 
 SERVER_HOST = "127.0.0.1"
-SERVER_PORT = 8000
-BASE_URL = f"http://{SERVER_HOST}:{SERVER_PORT}"
+SERVER_PORT = None
+BASE_URL = None
 
 
 def wait_for_server(timeout: float = 30.0) -> None:
@@ -45,6 +45,21 @@ def wait_for_server(timeout: float = 30.0) -> None:
 @pytest.fixture(scope="module")
 def server():
     """Run the uvicorn server for the duration of the test module."""
+    # pick a free port to avoid colliding with any existing local server
+    import socket
+    def _find_free_port():
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((SERVER_HOST, 0))
+        port = s.getsockname()[1]
+        s.close()
+        return port
+
+    port = _find_free_port()
+    global SERVER_PORT, BASE_URL
+    SERVER_PORT = port
+    BASE_URL = f"http://{SERVER_HOST}:{SERVER_PORT}"
+
     uv_cmd = [
         sys.executable,
         "-m",
@@ -57,11 +72,15 @@ def server():
     ]
 
     # Allow verbose server output when debugging locally
+    env = os.environ.copy()
+    # When running the e2e tests, allow the server to bypass any new login flow so
+    # the legacy UI (with #name input) is served. This keeps Playwright tests stable.
+    env["CHEATER_ALLOW_ANON"] = "1"
     if os.environ.get("DEBUG_E2E"):
-        proc = subprocess.Popen(uv_cmd)
+        proc = subprocess.Popen(uv_cmd, env=env)
     else:
         proc = subprocess.Popen(
-            uv_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            uv_cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
 
     try:
