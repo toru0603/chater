@@ -43,7 +43,7 @@ async def index(request: Request) -> HTMLResponse:
         )
     user = request.cookies.get(_COOKIE_NAME)
     if not user:
-        return RedirectResponse(url="/login")
+        return RedirectResponse(url=f"{root_path}/login")
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -53,10 +53,10 @@ async def index(request: Request) -> HTMLResponse:
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_get(request: Request) -> HTMLResponse:
+    root_path = os.environ.get("ROOT_PATH", "").rstrip("/")
     # If already logged in, go to main page
     if request.cookies.get(_COOKIE_NAME):
-        return RedirectResponse(url="/")
-    root_path = os.environ.get("ROOT_PATH", "").rstrip("/")
+        return RedirectResponse(url=f"{root_path}/")
     return templates.TemplateResponse(
         request=request,
         name="login.html",
@@ -96,7 +96,8 @@ async def login_post(request: Request):
 
     # Validate credentials using DynamoDB-backed users
     if username and password and check_credentials(username, password):
-        response = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+        root_path = os.environ.get("ROOT_PATH", "").rstrip("/")
+        response = RedirectResponse(url=f"{root_path}/", status_code=status.HTTP_302_FOUND)
         response.set_cookie(key=_COOKIE_NAME, value=username, httponly=True)
         return response
 
@@ -112,7 +113,8 @@ async def login_post(request: Request):
 
 @app.get("/logout")
 async def logout() -> RedirectResponse:
-    response = RedirectResponse(url="/login")
+    root_path = os.environ.get("ROOT_PATH", "").rstrip("/")
+    response = RedirectResponse(url=f"{root_path}/login")
     response.delete_cookie(_COOKIE_NAME)
     return response
 

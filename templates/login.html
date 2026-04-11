@@ -11,7 +11,7 @@
       <section class="panel">
         <h1>{{ app_name }}</h1>
 
-        <form action="/login" method="post" class="login-form">
+        <form action="{{ root_path }}/login" method="post" class="login-form">
           <label>
             ID
             <input id="username" name="username" type="text" value="{{ request.cookies.get('username', '') }}" />
