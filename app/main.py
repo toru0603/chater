@@ -66,22 +66,25 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
                 }
             )
         else:
-            # Notify both participants that they are matched
+            # Send participants list to the newcomer and notify existing peer of new join
+            # participants message is used by clients to initiate offers to existing participants
             await websocket.send_json(
                 {
-                    "type": "matched",
+                    "type": "participants",
                     "room_code": room_code,
-                    "peer": {"id": peer.id, "name": peer.name, "role": peer.role, "color": peer.color},
-                    "initiator": True,
+                    "participants": [
+                        {"id": peer.id, "name": peer.name, "role": peer.role, "color": peer.color}
+                    ],
                 }
             )
             try:
                 await peer.websocket.send_json(
                     {
-                        "type": "matched",
-                        "room_code": room_code,
-                        "peer": {"id": participant.id, "name": participant.name, "role": participant.role, "color": participant.color},
-                        "initiator": False,
+                        "type": "participant-joined",
+                        "id": participant.id,
+                        "name": participant.name,
+                        "role": participant.role,
+                        "color": participant.color,
                     }
                 )
             except Exception:
@@ -93,6 +96,32 @@ async def websocket_room(websocket: WebSocket, room_code: str) -> None:
 
             if message_type == "leave":
                 break
+
+            # camera/audio messages - broadcast to other participants (do not echo to sender)
+            if message_type in {"camera", "audio"}:
+                raw_enabled = message.get("enabled")
+                if isinstance(raw_enabled, str):
+                    enabled = raw_enabled.lower() in ("true", "1", "yes")
+                elif isinstance(raw_enabled, (int, float)):
+                    enabled = bool(raw_enabled)
+                else:
+                    enabled = bool(raw_enabled)
+                participants = await room_manager.get_room_participants(room_code)
+                for p in participants:
+                    if p.id == participant.id:
+                        continue
+                    try:
+                        await p.websocket.send_json(
+                            {
+                                "type": message_type,
+                                "from": participant.id,
+                                "from_name": participant.name,
+                                "enabled": enabled,
+                            }
+                        )
+                    except Exception:
+                        pass
+                continue
 
             # chat messages - broadcast to room
             if message_type == "chat":
