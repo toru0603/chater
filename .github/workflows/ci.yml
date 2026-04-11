@@ -73,8 +73,11 @@ jobs:
               return total
 
           tests_lines = count_nonempty_py_lines('tests') if os.path.isdir('tests') else 0
+          # exclude E2E tests from TCR calculation
+          e2e_dir = os.path.join('tests', 'e2e')
+          e2e_lines = count_nonempty_py_lines(e2e_dir) if os.path.isdir(e2e_dir) else 0
+          tests_lines = max(0, tests_lines - e2e_lines)
           app_lines = count_nonempty_py_lines('app') if os.path.isdir('app') else 0
-
           print(f'Test lines (non-empty): {tests_lines}, App lines (non-empty): {app_lines}')
           if app_lines == 0:
               print('No source lines found to compute TCR', file=sys.stderr)
@@ -357,6 +360,10 @@ jobs:
                           cnt += sum(1 for line in f if line.strip())
               return cnt
           tests_lines = count_nonempty_py_lines('tests')
+          # exclude E2E tests from TCR calculation
+          e2e_dir = os.path.join('tests', 'e2e')
+          e2e_lines = count_nonempty_py_lines(e2e_dir) if os.path.isdir(e2e_dir) else 0
+          tests_lines = max(0, tests_lines - e2e_lines)
           app_lines = count_nonempty_py_lines('app')
           tcr = round(tests_lines / app_lines, 3) if app_lines else None
           with open('/tmp/ci-metrics.json', 'w') as f:
