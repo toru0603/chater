@@ -10,6 +10,11 @@ const videosContainer = document.getElementById("videos");
 const messageInput = document.getElementById("messageInput");
 const sendMsgBtn = document.getElementById("sendMsgBtn");
 const danmakuContainer = document.getElementById("danmaku");
+const toggleCameraBtn = document.getElementById("toggleCameraBtn");
+const toggleAudioBtn = document.getElementById("toggleAudioBtn");
+let cameraEnabled = true;
+let audioEnabled = true;
+
 
 let socket = null;
 let localStream = null;
@@ -197,6 +202,17 @@ async function startCall() {
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     localVideo.srcObject = localStream;
+      if (toggleCameraBtn) {
+        toggleCameraBtn.disabled = false;
+        cameraEnabled = localStream.getVideoTracks().some(t => t.enabled);
+        toggleCameraBtn.textContent = cameraEnabled ? 'カメラON' : 'カメラOFF';
+      }
+      if (toggleAudioBtn) {
+        toggleAudioBtn.disabled = false;
+        audioEnabled = localStream.getAudioTracks().some(t => t.enabled);
+        toggleAudioBtn.textContent = audioEnabled ? 'マイクON' : 'マイクOFF';
+      }
+
   } catch (err) {
     setStatus(`カメラ/マイクを取得できません: ${err.message}`);
     return;
@@ -315,6 +331,35 @@ async function startCall() {
       return;
     }
 
+    if (message.type === 'camera') {
+      // update remote camera state (show/hide indicator)
+      const fromId = message.from;
+      const enabled = !!message.enabled;
+      const vid = createRemoteVideoElement(fromId, message.from_name || 'Peer');
+      const tile = vid ? vid.parentElement : null;
+      if (tile) {
+        const title = tile.querySelector('h3');
+        if (title) {
+          title.textContent = (message.from_name || title.textContent) + (enabled ? '' : ' (カメラOFF)');
+        }
+      }
+      return;
+    }
+
+    if (message.type === 'audio') {
+      const fromId = message.from;
+      const enabled = !!message.enabled;
+      const vid = createRemoteVideoElement(fromId, message.from_name || 'Peer');
+      const tile = vid ? vid.parentElement : null;
+      if (tile) {
+        const title = tile.querySelector('h3');
+        if (title) {
+          title.textContent = (message.from_name || title.textContent) + (enabled ? '' : ' (ミュート)');
+        }
+      }
+      return;
+    }
+
     if (message.type === 'chat') {
       // remember color and show danmaku with colored name
       if (message.color) participantColors[message.from] = message.color;
@@ -338,10 +383,37 @@ function leaveCall() {
   if (socket) { socket.close(); socket = null; }
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
   localVideo.srcObject = null;
-  joinBtn.disabled = false; leaveBtn.disabled = true; setStatus('待機中');
+  joinBtn.disabled = false; leaveBtn.disabled = true; if (toggleCameraBtn) { toggleCameraBtn.disabled = true; toggleCameraBtn.textContent = 'カメラOFF'; } if (toggleAudioBtn) { toggleAudioBtn.disabled = true; toggleAudioBtn.textContent = 'マイクOFF'; } setStatus('待機中');
 }
 
 joinBtn.addEventListener('click', startCall);
 leaveBtn.addEventListener('click', leaveCall);
 
 window.addEventListener('beforeunload', () => { if (socket) socket.close(); });
+
+if (toggleCameraBtn) {
+  toggleCameraBtn.addEventListener('click', () => {
+    if (!localStream) return;
+    const videoTracks = localStream.getVideoTracks();
+    if (!videoTracks || videoTracks.length === 0) return;
+    const enabled = !videoTracks[0].enabled;
+    videoTracks.forEach(t => t.enabled = enabled);
+    cameraEnabled = enabled;
+    toggleCameraBtn.textContent = enabled ? 'カメラON' : 'カメラOFF';
+    if (socket && socket.readyState === WebSocket.OPEN) send({ type: 'camera', enabled: enabled });
+  });
+}
+
+if (toggleAudioBtn) {
+  toggleAudioBtn.addEventListener('click', () => {
+    if (!localStream) return;
+    const audioTracks = localStream.getAudioTracks();
+    if (!audioTracks || audioTracks.length === 0) return;
+    const enabled = !audioTracks[0].enabled;
+    audioTracks.forEach(t => t.enabled = enabled);
+    audioEnabled = enabled;
+    toggleAudioBtn.textContent = enabled ? 'マイクON' : 'マイクOFF';
+    if (socket && socket.readyState === WebSocket.OPEN) send({ type: 'audio', enabled: enabled });
+  });
+}
+
