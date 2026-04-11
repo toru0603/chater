@@ -10,7 +10,7 @@
 - Node.js (推奨: 18.x または 20.x) と npm
 - git, npx が利用可能
 - AWSアカウントと、長期アクセスキー（またはroleの利用元となる資格情報）
-- このリポジトリの feat/cdk-infra ブランチが最新であること
+- このリポジトリの main ブランチが最新であること
 
 重要: 認証情報はリポジトリに含めないでください。aws-vault(pass)はローカルの暗号化ストアに保存します。
 
@@ -128,11 +128,10 @@ CDK のブートストラップで作成された S3 バケットやロールは
 
 参考
 
+- docs/DEPLOY.md（デプロイ手順のメインガイド）
 - docs/aws-vault-pass-wsl.md
 - scripts/install-pass-gpg.sh
 - scripts/setup-aws-vault-pass.sh
 - scripts/deploy-cdk-with-aws-vault.sh
 - infra/cdk/
 
---
-このファイルを確認して問題なければデプロイ実行の許可をください。実行ログがあれば即座に解析します。
