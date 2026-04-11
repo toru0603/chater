@@ -72,3 +72,4 @@ local_settings.py
 !requirements.txt
 !architecture.md
 !files/**
+\n# local tools\ntools/bin
