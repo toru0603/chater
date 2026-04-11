@@ -18,7 +18,9 @@ export class ApiStack extends cdk.Stack {
       runtime: lambda.Runtime.NODEJS_18_X,
       entry: path.join(__dirname, '../src/handlers/api.ts'),
       handler: 'handler',
-      bundling: { minify: true, externalModules: ['aws-sdk'] },
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      bundling: { minify: true },
       environment: { TABLE_NAME: props.table.tableName },
     });
 
