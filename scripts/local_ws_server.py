@@ -20,7 +20,6 @@ import asyncio
 import json
 import os
 import sys
-import time
 import uuid
 
 # Allow importing ws_handler from the project
