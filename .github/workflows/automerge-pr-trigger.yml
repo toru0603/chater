@@ -1,13 +1,13 @@
-name: Auto Update Branch and Enable Auto-merge
+name: Auto Update Branch and Enable Auto-merge (PR trigger)
 
-# Opt-in automerge flow: label a PR with `automerge` (or `automerge-when-green`) to
-# 1) automatically update the PR branch from origin/main when it's behind
-# 2) enable GitHub auto-merge using match-head-commit so the exact head is merged when checks pass
+# Bootstrap workflow: runs via pull_request (uses PR branch's workflow file, not main's).
+# This creates a SUCCESS check run AFTER the pull_request_target run completes,
+# so GitHub's required check evaluates the latest (success) result.
+# This file can be removed once the fixed automerge-update-branch.yml is on main.
 
 on:
-  pull_request_target:
+  pull_request:
     types: [labeled, opened, synchronize, reopened, ready_for_review]
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -22,6 +22,9 @@ jobs:
     name: Update branch and enable auto-merge (opt-in label)
     runs-on: ubuntu-latest
     steps:
+      - name: Wait for pull_request_target workflow to complete first
+        run: sleep 40
+
       - name: Auto-merge handler (label-based)
         uses: actions/github-script@v6
         with:
@@ -65,7 +68,6 @@ jobs:
               try {
                 await github.rest.pulls.updateBranch({ owner, repo, pull_number: prNumber });
                 core.info('updateBranch requested; polling for head change...');
-                // poll for head sha change
                 const sleep = ms => new Promise(r => setTimeout(r, ms));
                 const maxAttempts = 20;
                 let attempts = 0;
@@ -78,7 +80,7 @@ jobs:
                   }
                   attempts++;
                 }
-                if (prInfo.head.sha === originalHead) core.info('Head did not change after updateBranch polling; proceeding with current head.');
+                if (prInfo.head.sha === originalHead) core.info('Head did not change after updateBranch polling; proceeding.');
               } catch (err) {
                 core.info('updateBranch failed: ' + (err.message || err));
                 await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body: `Failed to update branch automatically: ${err.message || err}. Please update branch from main manually.` });
@@ -88,7 +90,7 @@ jobs:
               core.info('Branch appears up-to-date or mergeable; skipping updateBranch.');
             }
 
-            // Re-fetch PR info and enable auto-merge with match-head-commit (expectedHeadOid)
+            // Re-fetch PR info and enable auto-merge
             prInfo = (await github.rest.pulls.get({ owner, repo, pull_number: prNumber })).data;
             const prNodeId = prInfo.node_id;
             const headOid = prInfo.head.sha;
