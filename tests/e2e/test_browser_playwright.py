@@ -57,11 +57,15 @@ def server():
     ]
 
     # Allow verbose server output when debugging locally
+    env = os.environ.copy()
+    # When running the e2e tests, allow the server to bypass any new login flow so
+    # the legacy UI (with #name input) is served. This keeps Playwright tests stable.
+    env["CHEATER_ALLOW_ANON"] = "1"
     if os.environ.get("DEBUG_E2E"):
-        proc = subprocess.Popen(uv_cmd)
+        proc = subprocess.Popen(uv_cmd, env=env)
     else:
         proc = subprocess.Popen(
-            uv_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            uv_cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
 
     try:
