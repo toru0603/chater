@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ app_name }} - ログイン</title>
+    <link rel="stylesheet" href="{{ root_path }}/static/style.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="panel">
+        <h1>{{ app_name }}</h1>
+
+        <form action="/login" method="post" class="login-form">
+          <label>
+            ID
+            <input id="username" name="username" type="text" value="{{ request.cookies.get('username', '') }}" />
+          </label>
+
+          <label>
+            パスワード
+            <input id="password" name="password" type="password" />
+          </label>
+
+          {% if error %}
+            <p class="error">{{ error }}</p>
+          {% endif %}
+
+          <div class="actions">
+            <button id="loginBtn" type="submit">ログイン</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

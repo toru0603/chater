@@ -1,6 +1,8 @@
 import * as cdk from 'aws-cdk-lib';
+import { RemovalPolicy } from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as apigw from 'aws-cdk-lib/aws-apigateway';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
@@ -11,6 +13,14 @@ export interface ApiStackProps extends cdk.StackProps {
 export class ApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
+
+    const usersTable = new dynamodb.Table(this, 'UsersTable', {
+      tableName: 'ChaterUsers',
+      partitionKey: { name: 'username', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
 
     const projectRoot = path.join(__dirname, '../../../');
 
@@ -35,8 +45,11 @@ export class ApiStack extends cdk.Stack {
       environment: {
         WS_URL: props.wsUrl,
         ROOT_PATH: '/prod',
+        USERS_TABLE: usersTable.tableName,
       },
     });
+
+    usersTable.grantReadWriteData(fn);
 
     const api = new apigw.LambdaRestApi(this, 'RestApi', {
       handler: fn,

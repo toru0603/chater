@@ -160,7 +160,19 @@ def test_browser_playwright_match_and_leave(server):
 
         page1.on("console", _p1_console)
         page1.goto(BASE_URL, wait_until="networkidle")
-        # DEBUG: dump a snippet of the served app.js to ensure it's the edited version
+        # If the app redirects to /login, perform the login flow first.
+        try:
+            if page1.query_selector("#username"):
+                page1.fill("#username", "toru")
+                page1.fill("#password", "jejeje")
+                page1.click("button[type=submit]")
+                page1.wait_for_load_state("networkidle")
+                page1.goto(BASE_URL, wait_until="networkidle")
+        except Exception:
+            # If Playwright can't query, continue and let subsequent checks fail
+            pass
+
+        # DEBUG: dump a snippet of the served app.js to help debugging
         try:
             snippet = page1.evaluate(
                 "() => fetch('/static/app.js').then(r => r.text()).then(t => t.slice(0,400))"
@@ -168,6 +180,7 @@ def test_browser_playwright_match_and_leave(server):
             print("DEBUG: app.js (page1) snippet ->", snippet)
         except Exception as e:
             print("DEBUG: app.js fetch failed", e)
+
         page1.fill("#name", "Alice")
         page1.fill("#roomCode", "e2e-room")
         page1.click("#joinBtn")

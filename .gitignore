@@ -72,5 +72,7 @@ local_settings.py
 !requirements.txt
 !architecture.md
 !files/**
-\n# local tools\ntools/bin
+
+# local tools
+tools/bin
 infra/cdk/cdk.out/
