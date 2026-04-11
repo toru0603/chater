@@ -1,0 +1,114 @@
+name: Auto Update Branch and Enable Auto-merge (PR trigger)
+
+# Bootstrap workflow: runs via pull_request (uses PR branch's workflow file, not main's).
+# This creates a SUCCESS check run AFTER the pull_request_target run completes,
+# so GitHub's required check evaluates the latest (success) result.
+# This file can be removed once the fixed automerge-update-branch.yml is on main.
+
+on:
+  pull_request:
+    types: [labeled, opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+  statuses: write
+  issues: write
+  actions: read
+
+jobs:
+  automerge:
+    name: Update branch and enable auto-merge (opt-in label)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for pull_request_target workflow to complete first
+        run: sleep 40
+
+      - name: Auto-merge handler (label-based)
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const payload = context.payload || {};
+            const pr = payload.pull_request;
+            if (!pr) { core.info('No pull_request payload; nothing to do.'); return; }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = pr.number;
+
+            // Opt-in labels
+            const ENABLE_LABELS = ['automerge', 'automerge-when-green', 'merge-when-green'];
+            const labels = (pr.labels || []).map(l => l.name);
+            const hasAuto = labels.some(l => ENABLE_LABELS.includes(l));
+            if (!hasAuto) {
+              core.info('Automerge labels not present; exiting.');
+              return;
+            }
+
+            core.info(`Automerge requested for PR #${prNumber}`);
+
+            // If PR comes from a fork, we cannot update the branch in upstream repo
+            if (!pr.head.repo || pr.head.repo.full_name !== `${owner}/${repo}`) {
+              core.info('PR is from a fork; automatic branch update is not possible.');
+              await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body: 'Automerge unavailable for fork PRs. Please update your branch from main or ask a maintainer to update it.' });
+              return;
+            }
+
+            // Fetch fresh PR info
+            let prInfo = (await github.rest.pulls.get({ owner, repo, pull_number: prNumber })).data;
+            const originalHead = prInfo.head.sha;
+            core.info(`Current head: ${originalHead}, mergeable_state: ${prInfo.mergeable_state}`);
+
+            // If PR is behind base (or unknown), request updateBranch (merge base into head)
+            const behindStates = ['behind','dirty','unknown'];
+            if (behindStates.includes(prInfo.mergeable_state)) {
+              core.info('PR appears behind/unknown; requesting updateBranch...');
+              try {
+                await github.rest.pulls.updateBranch({ owner, repo, pull_number: prNumber });
+                core.info('updateBranch requested; polling for head change...');
+                const sleep = ms => new Promise(r => setTimeout(r, ms));
+                const maxAttempts = 20;
+                let attempts = 0;
+                while (attempts < maxAttempts) {
+                  await sleep(3000);
+                  prInfo = (await github.rest.pulls.get({ owner, repo, pull_number: prNumber })).data;
+                  if (prInfo.head.sha !== originalHead) {
+                    core.info(`Branch updated: new head ${prInfo.head.sha}`);
+                    break;
+                  }
+                  attempts++;
+                }
+                if (prInfo.head.sha === originalHead) core.info('Head did not change after updateBranch polling; proceeding.');
+              } catch (err) {
+                core.info('updateBranch failed: ' + (err.message || err));
+                await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body: `Failed to update branch automatically: ${err.message || err}. Please update branch from main manually.` });
+                return;
+              }
+            } else {
+              core.info('Branch appears up-to-date or mergeable; skipping updateBranch.');
+            }
+
+            // Re-fetch PR info and enable auto-merge
+            prInfo = (await github.rest.pulls.get({ owner, repo, pull_number: prNumber })).data;
+            const prNodeId = prInfo.node_id;
+            const headOid = prInfo.head.sha;
+            core.info(`Enabling auto-merge with expectedHeadOid=${headOid}`);
+
+            const mutation = `
+              mutation EnableAutoMerge($prId: ID!, $expectedHeadOid: GitObjectID!, $mergeMethod: PullRequestMergeMethod!) {
+                enablePullRequestAutoMerge(input: { pullRequestId: $prId, expectedHeadOid: $expectedHeadOid, mergeMethod: $mergeMethod }) {
+                  pullRequest { id }
+                }
+              }
+            `;
+
+            try {
+              await github.graphql(mutation, { prId: prNodeId, expectedHeadOid: headOid, mergeMethod: 'MERGE' });
+              await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body: `Automerge enabled for this PR (expected head sha ${headOid}). It will be merged automatically once required checks pass.` });
+              core.info('Automerge enabled.');
+            } catch (err) {
+              core.info('Failed to enable auto-merge: ' + (err.message || err));
+              await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body: `Failed to enable auto-merge: ${err.message || err}` });
+            }
