@@ -1,13 +1,12 @@
 import sqlite3
 from pathlib import Path
-from typing import Optional
 
 # bcrypt is optional at import time; functions below will use it if available
 try:
     import bcrypt
     BCRYPT_AVAILABLE = True
 except Exception:
-    bcrypt = None  # type: ignore
+    bcrypt = None
     BCRYPT_AVAILABLE = False
 
 BASE_DIR = Path(__file__).resolve().parent.parent

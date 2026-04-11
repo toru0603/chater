@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Form, status
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, status
+from .auth import check_credentials
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -22,7 +23,6 @@ room_manager = RoomManager()
 # Auth configuration: persistent users stored in SQLite (users.db).
 _COOKIE_NAME = "username"
 # auth helper (initializes DB and provides check_credentials)
-from .auth import check_credentials
 
 
 @app.get("/", response_class=HTMLResponse)
