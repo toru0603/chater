@@ -9,7 +9,15 @@
   <body>
     <main class="layout">
       <section class="panel">
-        <h1>{{ app_name }}</h1>
+        <div class="panel-header">
+          <h1>{{ app_name }}</h1>
+          {% if user %}
+          <div class="header-actions">
+            <span class="user-name">ようこそ、{{ user }}さん</span>
+            <a class="button logout" href="/logout">ログアウト</a>
+          </div>
+          {% endif %}
+        </div>
         <p class="sub">待ち受け番号でつながる、シンプルな動画チャット。</p>
 
         <label>

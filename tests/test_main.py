@@ -14,9 +14,16 @@ def reset_room_manager():
 
 def test_index():
     client = TestClient(main_module.app)
-    r = client.get("/")
-    assert r.status_code == 200
-    assert "<title>cheter</title>" in r.text
+    # Unauthenticated access should redirect to login
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code in (302, 307)
+    assert r.headers.get("location", "").startswith("/login")
+
+    # After setting the cookie, the main page should be accessible
+    client.cookies.set("username", "toru")
+    r2 = client.get("/")
+    assert r2.status_code == 200
+    assert "<title>cheter</title>" in r2.text
 
 
 def test_websocket_flow():

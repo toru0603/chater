@@ -121,13 +121,18 @@ def test_browser_playwright_match_and_leave(server):
         };
         """
 
-        context = browser.new_context()
-        context.tracing.start(screenshots=True, snapshots=True)
-        context.add_init_script(init_script)
+        context1 = browser.new_context()
+        context1.tracing.start(screenshots=True, snapshots=True)
+        context1.add_init_script(init_script)
 
         # Page 1: Alice
-        page1 = context.new_page()
-        page1.goto(BASE_URL, wait_until="networkidle")
+        page1 = context1.new_page()
+        # Login first
+        page1.goto(BASE_URL + "/login", wait_until="networkidle")
+        page1.fill("#username", "toru")
+        page1.fill("#password", "jejeje")
+        page1.click("button[type=submit]")
+        page1.wait_for_load_state("networkidle")
         page1.fill("#name", "Alice")
         page1.fill("#roomCode", "e2e-room")
         page1.click("#joinBtn")
@@ -142,8 +147,16 @@ def test_browser_playwright_match_and_leave(server):
         )
 
         # Page 2: Bob
-        page2 = context.new_page()
-        page2.goto(BASE_URL, wait_until="networkidle")
+        context2 = browser.new_context()
+        context2.tracing.start(screenshots=True, snapshots=True)
+        context2.add_init_script(init_script)
+        page2 = context2.new_page()
+        # Login first
+        page2.goto(BASE_URL + "/login", wait_until="networkidle")
+        page2.fill("#username", "toru")
+        page2.fill("#password", "jejeje")
+        page2.click("button[type=submit]")
+        page2.wait_for_load_state("networkidle")
         page2.fill("#name", "Bob")
         page2.fill("#roomCode", "e2e-room")
         page2.click("#joinBtn")
@@ -194,8 +207,13 @@ def test_browser_playwright_match_and_leave(server):
         assert left, "Peer tile did not disappear within timeout"
 
         try:
-            trace_path = f"/tmp/playwright-trace-{int(time.time())}.zip"
-            context.tracing.stop(path=trace_path)
+            trace_path1 = f"/tmp/playwright-trace1-{int(time.time())}.zip"
+            trace_path2 = f"/tmp/playwright-trace2-{int(time.time())}.zip"
+            context1.tracing.stop(path=trace_path1)
+            try:
+                context2.tracing.stop(path=trace_path2)
+            except Exception:
+                pass
             page1.screenshot(path=f"/tmp/e2e-page1-{int(time.time())}.png")
             page2.screenshot(path=f"/tmp/e2e-page2-{int(time.time())}.png")
         except Exception as e:
