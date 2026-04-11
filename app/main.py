@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Form, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -18,14 +18,87 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 room_manager = RoomManager()
 
+# Auth configuration: persistent users stored in SQLite (users.db).
+_COOKIE_NAME = "username"
+# auth helper (initializes DB and provides check_credentials)
+from .auth import check_credentials
+
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
+    # Require login: redirect to /login when not authenticated
+    user = request.cookies.get(_COOKIE_NAME)
+    if not user:
+        return RedirectResponse(url="/login")
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"request": request, "app_name": "cheter"},
+        context={"request": request, "app_name": "cheter", "user": user},
     )
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_get(request: Request) -> HTMLResponse:
+    # If already logged in, go to main page
+    if request.cookies.get(_COOKIE_NAME):
+        return RedirectResponse(url="/")
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+        context={"request": request, "app_name": "cheter", "error": None},
+    )
+
+
+@app.post("/login")
+async def login_post(request: Request):
+    # Parse form data without requiring python-multipart by handling
+    # application/x-www-form-urlencoded manually.
+    content_type = request.headers.get("content-type", "")
+    username = None
+    password = None
+
+    if "application/x-www-form-urlencoded" in content_type or not content_type:
+        body = await request.body()
+        try:
+            body_text = body.decode("utf-8")
+            from urllib.parse import parse_qs
+
+            data = parse_qs(body_text, keep_blank_values=True)
+            username = data.get("username", [""])[0]
+            password = data.get("password", [""])[0]
+        except Exception:
+            username = None
+            password = None
+    else:
+        # Fallback: try starlette's form parser if available (python-multipart installed)
+        try:
+            form = await request.form()
+            username = form.get("username")
+            password = form.get("password")
+        except Exception:
+            username = None
+            password = None
+
+    # Validate credentials using persistent SQLite-backed users
+    if username and password and check_credentials(username, password):
+        response = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+        response.set_cookie(key=_COOKIE_NAME, value=username, httponly=True)
+        return response
+
+    # Invalid login
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+        context={"request": request, "app_name": "cheter", "error": "ID またはパスワードが違います"},
+        status_code=400,
+    )
+
+
+@app.get("/logout")
+async def logout() -> RedirectResponse:
+    response = RedirectResponse(url="/login")
+    response.delete_cookie(_COOKIE_NAME)
+    return response
 
 
 @app.websocket("/ws/{room_code}")

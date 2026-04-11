@@ -72,3 +72,5 @@ local_settings.py
 !requirements.txt
 !architecture.md
 !files/**
+
+users.db
