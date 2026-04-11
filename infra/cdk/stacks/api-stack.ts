@@ -34,6 +34,7 @@ export class ApiStack extends cdk.Stack {
       }),
       environment: {
         WS_URL: props.wsUrl,
+        ROOT_PATH: '/prod',
       },
     });
 

@@ -26,9 +26,9 @@ async def index(request: Request) -> HTMLResponse:
     # WS_URL is set in production (API Gateway WebSocket URL).
     # When unset, the frontend falls back to the local FastAPI WebSocket route.
     ws_url = os.environ.get("WS_URL", "")
-    # root_path is set by Mangum to the API Gateway stage (e.g. "/prod").
-    # We pass it to the template so static asset URLs resolve correctly.
-    root_path = request.scope.get("root_path", "").rstrip("/")
+    # root_path is injected as ROOT_PATH env var from CDK (API Gateway stage prefix).
+    # Falls back to empty string for local development.
+    root_path = os.environ.get("ROOT_PATH", "").rstrip("/")
     return templates.TemplateResponse(
         request=request,
         name="index.html",
