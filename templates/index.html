@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ app_name }}</title>
-    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="stylesheet" href="{{ request.url_for('static', path='style.css') }}" />
     {% if ws_url %}<script>window.WS_URL = "{{ ws_url }}";</script>{% endif %}
   </head>
   <body>
@@ -50,6 +50,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js"></script>
+    <script src="{{ request.url_for('static', path='app.js') }}"></script>
   </body>
 </html>
