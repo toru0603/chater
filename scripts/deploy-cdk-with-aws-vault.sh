@@ -17,7 +17,7 @@ else
 fi
 
 PROFILE="${1:-chater-deploy}"
-AWS_VAULT_BACKEND="${AWS_VAULT_BACKEND:-pass}"
+export AWS_VAULT_BACKEND="${AWS_VAULT_BACKEND:-pass}"
 AWS_REGION="${AWS_REGION:-ap-northeast-1}"
 CDK_DIR="$ROOT_DIR/infra/cdk"
 
@@ -36,7 +36,7 @@ fi
 
 # Validate aws-vault can run a simple aws command
 echo "Checking AWS credentials via aws sts get-caller-identity"
-ACCOUNT="$($AWS_VAULT_CMD exec "$PROFILE" -- aws sts get-caller-identity --query Account --output text)"
+ACCOUNT="$($AWS_VAULT_CMD exec "$PROFILE" --no-session -- aws sts get-caller-identity --query Account --output text)"
 if [ -z "$ACCOUNT" ]; then
   echo "ERROR: failed to determine AWS account. Check aws-vault profile and backend." >&2
   exit 1
@@ -46,10 +46,10 @@ echo "Detected AWS account: $ACCOUNT"
 
 # Bootstrap (creates CDK assets bucket and roles)
 echo "Bootstrapping CDK into aws://$ACCOUNT/$AWS_REGION"
-$AWS_VAULT_CMD exec "$PROFILE" -- npx cdk bootstrap aws://$ACCOUNT/$AWS_REGION --require-approval never
+$AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk bootstrap aws://$ACCOUNT/$AWS_REGION --require-approval never
 
 # Deploy all stacks
 echo "Deploying CDK stacks (this may take several minutes)"
-$AWS_VAULT_CMD exec "$PROFILE" -- npx cdk deploy --all --require-approval never
+$AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk deploy --all --require-approval never
 
 echo "CDK deploy finished. Review output above for stack outputs and endpoints."
