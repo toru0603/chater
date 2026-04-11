@@ -218,7 +218,17 @@ async function startCall() {
     return;
   }
 
-  socket = new WebSocket(`ws://${location.host}/ws/${encodeURIComponent(roomCode)}`);
+  // Use WS_URL injected by server (API Gateway WebSocket) or fall back to
+  // local FastAPI WebSocket route for development.
+  function _buildWsUrl(roomCode) {
+    if (window.WS_URL) {
+      return `${window.WS_URL}?roomCode=${encodeURIComponent(roomCode)}`;
+    }
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${location.host}/ws/${encodeURIComponent(roomCode)}`;
+  }
+
+  socket = new WebSocket(_buildWsUrl(roomCode));
   socket.onopen = () => {
     send({ type: 'join', name });
     setStatus('サーバに接続しました');

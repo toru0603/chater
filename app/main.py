@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, status
@@ -27,22 +28,26 @@ _COOKIE_NAME = "username"
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
-    import os
+    # WS_URL is set in production (API Gateway WebSocket URL).
+    # When unset, the frontend falls back to the local FastAPI WebSocket route.
+    ws_url = os.environ.get("WS_URL", "")
+    # ROOT_PATH is injected as env var from CDK (API Gateway stage prefix).
+    # Falls back to empty string for local development.
+    root_path = os.environ.get("ROOT_PATH", "").rstrip("/")
+    # Allow bypassing any auth/login flow for E2E/tests or local dev by setting CHEATER_ALLOW_ANON=1.
+    if os.environ.get("CHEATER_ALLOW_ANON"):
+        return templates.TemplateResponse(
+            request=request,
+            name="index.html",
+            context={"request": request, "app_name": "cheter", "ws_url": ws_url, "root_path": root_path},
+        )
     user = request.cookies.get(_COOKIE_NAME)
     if not user:
-        # Allow bypassing any auth/login flow for E2E/tests or local dev by setting CHEATER_ALLOW_ANON=1.
-        if os.environ.get("CHEATER_ALLOW_ANON"):
-            return templates.TemplateResponse(
-                request=request,
-                name="index.html",
-                context={"request": request, "app_name": "cheter"},
-            )
         return RedirectResponse(url="/login")
-
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"request": request, "app_name": "cheter", "user": user},
+        context={"request": request, "app_name": "cheter", "ws_url": ws_url, "root_path": root_path, "user": user},
     )
 
 

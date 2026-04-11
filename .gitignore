@@ -73,4 +73,6 @@ local_settings.py
 !architecture.md
 !files/**
 
-users.db
+# local tools
+tools/bin
+infra/cdk/cdk.out/
