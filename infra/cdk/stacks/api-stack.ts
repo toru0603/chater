@@ -4,11 +4,14 @@ import * as apigw from 'aws-cdk-lib/aws-apigateway';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
+export interface ApiStackProps extends cdk.StackProps {
+  wsUrl: string;
+}
+
 export class ApiStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    // Project root is 3 levels up from infra/cdk/stacks/
     const projectRoot = path.join(__dirname, '../../../');
 
     const fn = new lambda.Function(this, 'AppHandler', {
@@ -29,16 +32,19 @@ export class ApiStack extends cdk.Stack {
           ],
         },
       }),
+      environment: {
+        WS_URL: props.wsUrl,
+      },
     });
 
     const api = new apigw.LambdaRestApi(this, 'RestApi', {
       handler: fn,
       proxy: true,
       restApiName: 'ChaterApi',
-      // Allow binary responses (CSS, JS, images)
       binaryMediaTypes: ['*/*'],
     });
 
     new cdk.CfnOutput(this, 'ApiUrl', { value: api.url });
   }
 }
+

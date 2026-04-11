@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -22,10 +23,13 @@ room_manager = RoomManager()
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
+    # WS_URL is set in production (API Gateway WebSocket URL).
+    # When unset, the frontend falls back to the local FastAPI WebSocket route.
+    ws_url = os.environ.get("WS_URL", "")
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"request": request, "app_name": "cheter"},
+        context={"request": request, "app_name": "cheter", "ws_url": ws_url},
     )
 
 
