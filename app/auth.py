@@ -1,7 +1,8 @@
-import sqlite3
-from pathlib import Path
+from __future__ import annotations
 
-# bcrypt is optional at import time; functions below will use it if available
+import logging
+import os
+
 try:
     import bcrypt
     BCRYPT_AVAILABLE = True
@@ -9,61 +10,84 @@ except Exception:
     bcrypt = None
     BCRYPT_AVAILABLE = False
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DB_PATH = BASE_DIR / "users.db"
+import boto3
+from botocore.exceptions import ClientError
+
+logger = logging.getLogger(__name__)
+
+_TABLE_NAME = os.environ.get("USERS_TABLE", "ChaterUsers")
+_DYNAMODB_ENDPOINT = os.environ.get("DYNAMODB_ENDPOINT")
+_DEFAULT_REGION = os.environ.get("AWS_DEFAULT_REGION", "ap-northeast-1")
+
+
+def _get_dynamodb_kwargs() -> dict:
+    kwargs: dict = {"region_name": _DEFAULT_REGION}
+    if _DYNAMODB_ENDPOINT:
+        kwargs["endpoint_url"] = _DYNAMODB_ENDPOINT
+    return kwargs
+
+
+def _get_table():
+    dynamodb = boto3.resource("dynamodb", **_get_dynamodb_kwargs())
+    return dynamodb.Table(_TABLE_NAME)
 
 
 def init_db() -> None:
-    """Initialize the users database and ensure a default user exists."""
-    conn = sqlite3.connect(str(DB_PATH))
-    cur = conn.cursor()
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL
-        )
-        """
-    )
-    conn.commit()
+    """Ensure the ChaterUsers table exists (local only) and seed the default user."""
+    if _DYNAMODB_ENDPOINT:
+        # Local development: create the table if it doesn't exist yet
+        client = boto3.client("dynamodb", **_get_dynamodb_kwargs())
+        try:
+            client.create_table(
+                TableName=_TABLE_NAME,
+                AttributeDefinitions=[{"AttributeName": "username", "AttributeType": "S"}],
+                KeySchema=[{"AttributeName": "username", "KeyType": "HASH"}],
+                BillingMode="PAY_PER_REQUEST",
+            )
+            logger.info("Created DynamoDB table %s", _TABLE_NAME)
+        except ClientError as e:
+            if e.response["Error"]["Code"] not in ("ResourceInUseException",):
+                raise
 
-    # Ensure default user 'toru' exists. The plain password is 'jejeje' for now;
-    # if bcrypt is available we store a bcrypt hash, otherwise store plaintext.
-    cur.execute("SELECT id FROM users WHERE username = ?", ("toru",))
-    if not cur.fetchone():
-        default_pw = "jejeje"
-        if BCRYPT_AVAILABLE and bcrypt is not None:
-            pw_hash = bcrypt.hashpw(default_pw.encode("utf-8"), bcrypt.gensalt())
-            pw_store = pw_hash.decode("utf-8")
-        else:
-            pw_store = default_pw
-        cur.execute(
-            "INSERT INTO users (username, password_hash) VALUES (?, ?)", ("toru", pw_store)
-        )
-        conn.commit()
+    # Seed default user 'toru' if not present
+    default_pw = "jejeje"
+    if BCRYPT_AVAILABLE and bcrypt is not None:
+        pw_hash = bcrypt.hashpw(default_pw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    else:
+        pw_hash = default_pw
 
-    conn.close()
+    try:
+        table = _get_table()
+        table.put_item(
+            Item={"username": "toru", "password_hash": pw_hash},
+            ConditionExpression="attribute_not_exists(username)",
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            logger.warning("init_db seed user failed: %s", e)
 
 
 def check_credentials(username: str, password: str) -> bool:
-    """Return True if username/password is valid according to users.db."""
-    conn = sqlite3.connect(str(DB_PATH))
-    cur = conn.cursor()
-    cur.execute("SELECT password_hash FROM users WHERE username = ?", (username,))
-    row = cur.fetchone()
-    conn.close()
-    if not row:
+    """Return True if username/password is valid according to ChaterUsers DynamoDB table."""
+    table = _get_table()
+    try:
+        response = table.get_item(Key={"username": username})
+    except ClientError:
         return False
-    stored = row[0]
+    item = response.get("Item")
+    if not item:
+        return False
+    stored = item.get("password_hash", "")
     if BCRYPT_AVAILABLE and bcrypt is not None:
         try:
             return bcrypt.checkpw(password.encode("utf-8"), stored.encode("utf-8"))
         except Exception:
             return False
-    # fallback: plaintext comparison
     return password == stored
 
 
-# Initialize DB on import
-init_db()
+# Initialize DB on import — failures are non-fatal (e.g., in test environments)
+try:
+    init_db()
+except Exception as exc:
+    logger.warning("init_db failed on import: %s", exc)

@@ -21,7 +21,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 room_manager = RoomManager()
 
-# Auth configuration: persistent users stored in SQLite (users.db).
+# Auth configuration: users stored in DynamoDB (ChaterUsers table).
 _COOKIE_NAME = "username"
 # auth helper (initializes DB and provides check_credentials)
 
@@ -56,10 +56,11 @@ async def login_get(request: Request) -> HTMLResponse:
     # If already logged in, go to main page
     if request.cookies.get(_COOKIE_NAME):
         return RedirectResponse(url="/")
+    root_path = os.environ.get("ROOT_PATH", "").rstrip("/")
     return templates.TemplateResponse(
         request=request,
         name="login.html",
-        context={"request": request, "app_name": "cheter", "error": None},
+        context={"request": request, "app_name": "cheter", "error": None, "root_path": root_path},
     )
 
 
@@ -93,17 +94,18 @@ async def login_post(request: Request):
             username = None
             password = None
 
-    # Validate credentials using persistent SQLite-backed users
+    # Validate credentials using DynamoDB-backed users
     if username and password and check_credentials(username, password):
         response = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
         response.set_cookie(key=_COOKIE_NAME, value=username, httponly=True)
         return response
 
     # Invalid login
+    root_path = os.environ.get("ROOT_PATH", "").rstrip("/")
     return templates.TemplateResponse(
         request=request,
         name="login.html",
-        context={"request": request, "app_name": "cheter", "error": "ID またはパスワードが違います"},
+        context={"request": request, "app_name": "cheter", "error": "ID またはパスワードが違います", "root_path": root_path},
         status_code=400,
     )
 
