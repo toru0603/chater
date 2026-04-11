@@ -8,6 +8,9 @@
 - Copilot: Copilot の PR 提案を仕様に反しない限り自動適用するポリシーと自動適用ワークフロー／スクリプトを追加（.github/COPILOT_POLICY.md、.github/workflows/copilot-auto-apply.yml、.github/scripts/apply_copilot_suggestions.py）。自動適用できない提案は PR に通知
 - ドキュメント: docs/WEBSOCKET_API.md を整備、README に color フィールドの説明を追記
 - その他: .github/PULL_REQUEST_TEMPLATE.md、CONTRIBUTING.md / PR_GUIDE.md を追加
+- ドキュメント追加: WebSocket API の詳細を docs/WEBSOCKET_API.md に追加
+- README.md に WebSocket API セクションを追加
+- architecture.md の Signaling 節を更新（ターゲット指定のシグナリング、participant 通知の説明を追加）
 
 (注) 実装上のポイント:
 - WebSocket エンドポイント: /ws/{room_code}

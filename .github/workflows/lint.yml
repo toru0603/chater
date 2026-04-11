@@ -28,6 +28,12 @@ jobs:
       - name: Run ruff
         run: ruff check .
 
+      - name: Run isort (auto-fix)
+        run: isort .
+
+      - name: Run black (auto-format)
+        run: black .
+
       - name: Run black check
         run: black --check .
 

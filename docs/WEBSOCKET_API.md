@@ -26,8 +26,9 @@
 2. サーバ -> クライアント
 
 - joined
-  - 形式: {"type": "joined", "room_code": "...", "participant_id": "...", "role": "host|participant", "name": "...", "color": "#rrggbb"}
+  - 形式: {"type": "joined", "room_code": "...", "participant_id": "...", "role": "host|guest", "name": "...", "color": "#rrggbb"}
   - 備考: join 成功時に送られる。`color` は任意フィールドで、参加者に割り当てられた表示色です。
+
 
 - waiting
   - 形式: {"type": "waiting", "room_code": "...", "message": "..."}
@@ -41,6 +42,7 @@
   - 形式: {"type": "participant-joined", "id": "...", "name": "...", "role": "...", "color": "#rrggbb"}
   - 備考: 既存参加者へ新規参加者を通知する。`color` が含まれる場合、クライアントは表示に利用できます。
 
+
 - participant-left
   - 形式: {"type": "participant-left", "id": "...", "name": "..."}
   - 備考: 参加者退出時に残存者へ通知する
@@ -48,6 +50,14 @@
 - signal
   - 形式: {"type": "signal", "signal_type": "offer|answer|candidate", "data": {...}, "from": "<sender_id>", "from_name": "<sender_name>"}
   - 備考: サーバがターゲット参加者へ転送するメッセージ
+
+- camera
+  - 形式: {"type": "camera", "from": "<id>", "from_name": "<name>", "enabled": true|false}
+  - 備考: 送信者のカメラ表示状態を他の参加者へ通知します（送信者自身へは再送しません）。
+
+- audio
+  - 形式: {"type": "audio", "from": "<id>", "from_name": "<name>", "enabled": true|false}
+  - 備考: 送信者のマイク（音声）オン/オフ状態を他の参加者へ通知します（送信者自身へは再送しません）。
 
 ## 実装メモ
 

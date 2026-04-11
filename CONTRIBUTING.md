@@ -7,9 +7,16 @@
 - 小さな修正（typo、ドキュメント修正など）は直接 PR を送ってください。
 - 大きな設計変更や機能追加は先に Issue を作成して議論してください。
 
+## ドキュメント運用ルール
+
+- このリポジトリの Markdown ドキュメントは、README から辿れる状態を保ってください。
+- 新しいドキュメントを追加した場合、または既存ドキュメントを移動・改名した場合は、対応する README のリンク一覧も必ず更新してください。
+- PR では、必要なドキュメント更新に加えて README 上の導線が維持されていることを確認してください。
+- 開発ルールは [docs/DEVELOPMENT_RULES.md](docs/DEVELOPMENT_RULES.md) にまとめられています。開発者はこの文書に従ってください。
+
 ## 開発環境
 
-前提: Python 3.8+
+前提: Python 3.10+
 
 ```bash
 python -m venv .venv
@@ -34,6 +41,26 @@ pytest -q
 - feature/<短い説明>
 - fix/<短い説明>
 - docs/<短い説明>
+
+## ブランチ作成の推奨
+
+新しい作業ブランチは必ず origin/main（リモートの main）から作成してください。こうすることで、マージ時の競合やブランチ保護ルール（例: 'Require status checks'）との不整合を防げます。
+
+推奨コマンド例:
+
+# リモートの main から直接作る
+git fetch origin
+git checkout -b feature/your-short-description origin/main
+
+# ローカル main を更新してから作る場合
+git checkout main
+git pull origin main
+git checkout -b feature/your-short-description
+
+PR を作成する前に main を取り込んでおく（rebase または merge）ことを推奨します:
+
+git fetch origin
+git rebase origin/main
 
 ## コミットメッセージ
 

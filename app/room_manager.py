@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import threading
+import asyncio
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Optional, List, Dict
 
 from fastapi import WebSocket
 
-# Tests expect rooms to be pairwise (host + guest)
+
 MAX_PARTICIPANTS = 2
 
 DEFAULT_COLORS = [
@@ -45,6 +45,9 @@ class Room:
     code: str
     participants: Dict[str, Participant] = field(default_factory=dict)
 
+    def peers_of(self, participant_id: str) -> List[Participant]:
+        return [p for pid, p in self.participants.items() if pid != participant_id]
+
     def participant_list(self) -> List[Participant]:
         return list(self.participants.values())
 
@@ -52,23 +55,15 @@ class Room:
 class RoomManager:
     def __init__(self) -> None:
         self._rooms: Dict[str, Room] = {}
-        self._lock = threading.Lock()
+        self._lock = asyncio.Lock()
 
-    async def add_participant(
-        self, room_code: str, name: str, websocket: WebSocket
-    ) -> Tuple[Participant, List[Participant]]:
-        """Add a participant. Returns (participant, existing_participants).
-
-        existing_participants is a list of participants that were in the room before
-        the new participant joined (empty for the first joiner).
-        """
-        with self._lock:
+    async def add_participant(self, room_code: str, name: str, websocket: WebSocket) -> tuple[Participant, list[Participant]]:
+        async with self._lock:
             room = self._rooms.setdefault(room_code, Room(code=room_code))
             if len(room.participants) >= MAX_PARTICIPANTS:
                 raise RoomFullError(room_code)
 
-            existing = list(room.participants.values())
-            role = "host" if not existing else "participant"
+            role = "host" if not room.participants else "guest"
             pid = uuid.uuid4().hex
             color = DEFAULT_COLORS[int(pid[:8], 16) % len(DEFAULT_COLORS)]
             participant = Participant(
@@ -79,24 +74,13 @@ class RoomManager:
                 color=color,
                 websocket=websocket,
             )
-
+            existing = list(room.participants.values())
             room.participants[participant.id] = participant
             return participant, existing
 
-    async def remove_participant(
-        self, participant_id: str
-    ) -> Tuple[Optional[Participant], List[Participant], bool]:
-        """Remove a participant and return (removed, remaining_list, empty).
-
-        removed is the participant removed (or None). remaining_list is the list of
-        participants left in the room after removal. empty is True when the room
-        becomes empty.
-        """
-        with self._lock:
-            room = next(
-                (r for r in self._rooms.values() if participant_id in r.participants),
-                None,
-            )
+    async def remove_participant(self, participant_id: str) -> tuple[Optional[Participant], list[Participant], bool]:
+        async with self._lock:
+            room = next((room for room in self._rooms.values() if participant_id in room.participants), None)
             if room is None:
                 return None, [], False
 
@@ -105,27 +89,24 @@ class RoomManager:
             empty = len(room.participants) == 0
             if empty:
                 self._rooms.pop(room.code, None)
-
             return removed, remaining, empty
 
-    async def get_peer(self, participant_id: str) -> Optional[Participant]:
-        """Return the other participant in the same room, or None if not found."""
-        with self._lock:
-            for room in self._rooms.values():
-                if participant_id in room.participants:
-                    for pid, p in room.participants.items():
-                        if pid != participant_id:
-                            return p
-            return None
-
     async def get_participant(self, participant_id: str) -> Optional[Participant]:
-        with self._lock:
+        async with self._lock:
             for room in self._rooms.values():
                 if participant_id in room.participants:
                     return room.participants.get(participant_id)
             return None
 
+    async def get_peer(self, participant_id: str) -> Optional[Participant]:
+        async with self._lock:
+            for room in self._rooms.values():
+                if participant_id in room.participants:
+                    peers = [p for pid, p in room.participants.items() if pid != participant_id]
+                    return peers[0] if peers else None
+        return None
+
     async def get_room_participants(self, room_code: str) -> List[Participant]:
-        with self._lock:
+        async with self._lock:
             room = self._rooms.get(room_code)
             return list(room.participants.values()) if room else []
