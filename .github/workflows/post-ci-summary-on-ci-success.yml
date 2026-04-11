@@ -1,0 +1,295 @@
+name: Post CI test summary to PR
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  checks: read
+  issues: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  post-summary:
+    name: Post CI test summary to PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository at commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.event.check_suite.head_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Gather workflow run and artifact IDs
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const payload = github.context.payload || {};
+            const owner = github.context.repo.owner;
+            const repo = github.context.repo.repo;
+            let prs = [];
+            let headSha = github.context.sha || '';
+            let runId = null;
+
+            if (payload.workflow_run) {
+              const wr = payload.workflow_run;
+              prs = wr.pull_requests || [];
+              headSha = wr.head_sha || (wr.head_commit && wr.head_commit.id) || headSha;
+              runId = wr.id;
+            } else if (payload.check_suite) {
+              const cs = payload.check_suite;
+              prs = cs.pull_requests || [];
+              headSha = cs.head_sha || headSha;
+              const runsResp = await github.rest.actions.listWorkflowRunsForRepo({ owner, repo, head_sha: headSha, per_page: 50 });
+              const runs = runsResp.data.workflow_runs || [];
+              const completed = runs.filter(r => r.status === 'completed');
+              if (completed.length > 0) {
+                const ciRuns = completed.filter(r => (r.name === 'CI' || r.workflow_name === 'CI' || r.name === 'ci'));
+                const candidates = ciRuns.length ? ciRuns : completed;
+                candidates.sort((a,b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+                runId = candidates[0] && candidates[0].id;
+              } else if (runs.length > 0) {
+                runs.sort((a,b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+                runId = runs[0] && runs[0].id;
+              }
+            } else {
+              core.info('No workflow_run or check_suite payload');
+            }
+
+            if ((!prs || prs.length === 0) && headSha) {
+              try {
+                const prsResp = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: headSha });
+                prs = prsResp.data || [];
+                core.info(`Found ${prs.length} PR(s) associated with ${headSha}`);
+              } catch (e) { core.info(`listPullRequestsAssociatedWithCommit failed: ${e.message || e}`); }
+            }
+
+            const artifactsResp = runId ? await github.rest.actions.listWorkflowRunArtifacts({ owner, repo, run_id: runId }) : { data: { artifacts: [] } };
+            const artifacts = artifactsResp.data.artifacts || [];
+            const mapping = {};
+            for (const a of artifacts) mapping[a.name] = a.id;
+            const out = { prs: prs.map(p => (p.number ? p.number : p)), run_id: runId, artifacts: mapping, head_sha: headSha };
+            fs.writeFileSync('ci-artifacts.json', JSON.stringify(out, null, 2));
+            core.info('Wrote ci-artifacts.json');
+
+      - name: Ensure ci-artifacts.json exists
+        if: always()
+        run: |
+          if [ ! -f ci-artifacts.json ]; then
+            echo "{\"prs\":[],\"run_id\":null,\"artifacts\":{},\"head_sha\":\"${GITHUB_SHA}\"}" > ci-artifacts.json || true
+          fi
+
+      - name: Download artifacts and extract summaries
+        if: always()
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ ! -f ci-artifacts.json ]; then echo "ci-artifacts.json not found; nothing to download"; exit 0; fi
+          python - <<'PY' > /tmp/ci-artifact-list.txt
+          import json
+          with open('ci-artifacts.json') as f:
+              d=json.load(f)
+          run_id=d.get('run_id')
+          print(run_id if run_id is not None else '')
+          for k,v in d.get('artifacts',{}).items():
+              print(f"{k}\t{v}")
+          PY
+          run_id=$(sed -n '1p' /tmp/ci-artifact-list.txt | tr -d '\r' || true)
+          if [ -z "$run_id" ]; then echo "No workflow run id found; skipping artifact download"; exit 0; fi
+          mkdir -p ci-artifacts
+          repo="$GITHUB_REPOSITORY"
+          token="$GITHUB_TOKEN"
+
+          sed -n '2,$p' /tmp/ci-artifact-list.txt | while IFS=$'\t' read -r name id; do
+            if [ -z "$name" ] || [ -z "$id" ]; then continue; fi
+            echo "Downloading artifact $name (id=$id)"
+            url="https://api.github.com/repos/$repo/actions/artifacts/$id/zip"
+            out="/tmp/artifact-$name.zip"
+            curl -sSL -H "Authorization: token $token" -H "Accept: application/octet-stream" "$url" -o "$out" || true
+            if [ ! -f "$out" ]; then echo "Failed to download $name"; continue; fi
+            mkdir -p /tmp/artifact-unpack-$name
+            unzip -qq -o "$out" -d /tmp/artifact-unpack-$name || true
+            for wanted in unit-summary.json e2e-summary.json coverage.xml; do
+              f=$(find /tmp/artifact-unpack-$name -type f -name "$wanted" -print -quit || true)
+              if [ -n "$f" ]; then cp -f "$f" "ci-artifacts/$wanted" || true; fi
+            done
+            mkdir -p ci-artifacts/raw-xml
+            find /tmp/artifact-unpack-$name -type f -name '*.xml' -print | while read -r xf; do
+              bn=$(basename "$xf")
+              if [ "$bn" = "coverage.xml" ]; then continue; fi
+              cp -f "$xf" "ci-artifacts/raw-xml/$bn" || true
+            done
+          done
+
+          if [ ! -f ci-artifacts/e2e-summary.json ]; then
+            python - <<'PY'
+          import os,xml.etree.ElementTree as ET,json,glob
+
+          def parse_junit(path):
+              try:
+                  root=ET.parse(path).getroot()
+                  if root.tag == 'testsuites':
+                      tests=int(root.get('tests') or 0)
+                      failures=int(root.get('failures') or 0)
+                      errors=int(root.get('errors') or 0)
+                      skipped=int(root.get('skipped') or 0)
+                  else:
+                      tests=int(root.get('tests') or 0)
+                      failures=int(root.get('failures') or 0)
+                      errors=int(root.get('errors') or 0)
+                      skipped=int(root.get('skipped') or 0)
+                  passed=tests - failures - errors - skipped
+                  return {'tests':tests,'passed':passed,'failures':failures,'errors':errors,'skipped':skipped}
+              except Exception:
+                  return None
+
+          candidates = []
+          for p in glob.glob('ci-artifacts/raw-xml/**/*.xml', recursive=True):
+              bn=os.path.basename(p).lower()
+              if 'e2e' in bn or 'playwright' in bn or 'e2e-results' in bn or 'e2e' in p.lower():
+                  candidates.append(p)
+          if not candidates:
+              for p in glob.glob('ci-artifacts/raw-xml/**/*results*.xml', recursive=True):
+                  candidates.append(p)
+          if not candidates:
+              for p in glob.glob('ci-artifacts/raw-xml/**/*.xml', recursive=True):
+                  candidates.append(p)
+
+          for p in candidates:
+              res = parse_junit(p)
+              if res:
+                  with open('ci-artifacts/e2e-summary.json','w') as f:
+                      json.dump(res,f)
+                  print('wrote e2e-summary.json from',p)
+                  break
+          PY
+          fi
+          echo "Extracted files:"; ls -lah ci-artifacts || true
+
+      - name: Compute TCR metrics
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+
+          def count_nonempty_py_lines(root):
+              cnt=0
+              if not os.path.isdir(root):
+                  return 0
+              for dirpath, dirnames, filenames in os.walk(root):
+                  for fn in filenames:
+                      if not fn.endswith('.py'): continue
+                      path=os.path.join(dirpath,fn)
+                      try:
+                          with open(path,'rb') as f:
+                              for line in f:
+                                  if line.strip():
+                                      cnt+=1
+                      except Exception:
+                          pass
+              return cnt
+
+          tests_lines = count_nonempty_py_lines('tests')
+          app_lines = count_nonempty_py_lines('app')
+          tcr = round(tests_lines / app_lines, 3) if app_lines else None
+          res={'tests_lines':tests_lines,'app_lines':app_lines,'tcr':tcr}
+          import json
+          with open('/tmp/ci-metrics.json','w') as f:
+              json.dump(res,f)
+          print(res)
+          PY
+
+      - name: Build and post CI summary comment
+        if: always()
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const owner = github.context.repo.owner;
+            const repo = github.context.repo.repo;
+            const data = fs.existsSync('ci-artifacts.json') ? JSON.parse(fs.readFileSync('ci-artifacts.json','utf8')) : { prs: [] };
+            let prs = data.prs || [];
+            const headSha = data.head_sha || github.context.sha || '';
+            const ciConclusion = (context.payload.workflow_run && context.payload.workflow_run.conclusion) || 'unknown';
+            const conclusionEmoji = ciConclusion === 'success' ? '✅' : ciConclusion === 'failure' ? '❌' : '⚠️';
+            if ((!prs || prs.length === 0) && headSha) {
+              try {
+                const prsResp = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: headSha });
+                prs = prsResp.data.map(p => p.number);
+              } catch (e) { core.info(`PR lookup failed: ${e.message || e}`); }
+            }
+            if (!prs || prs.length === 0) { core.info('No associated PRs found; skipping comment'); return; }
+            let md = `<!-- ci-summary -->\n## ${conclusionEmoji} CI テスト結果 (commit: \`${headSha.slice(0,7)}\`)\n\n`;
+            if (fs.existsSync('ci-artifacts/unit-summary.json')) {
+              try {
+                const u = JSON.parse(fs.readFileSync('ci-artifacts/unit-summary.json','utf8'));
+                md += '### 🧪 Unit Tests\n';
+                if (typeof u.tests !== 'undefined' && typeof u.passed !== 'undefined') {
+                  const icon = (u.failures || 0) + (u.errors || 0) > 0 ? '❌' : '✅';
+                  md += `${icon} **${u.passed} / ${u.tests} 件 OK**`;
+                  if ((u.failures || 0) > 0) md += ` (失敗: ${u.failures})`;
+                  if ((u.skipped || 0) > 0) md += ` (スキップ: ${u.skipped})`;
+                  md += '\n\n';
+                }
+                if (typeof u.coverage_line !== 'undefined' || typeof u.coverage_branch !== 'undefined') {
+                  md += `> Line coverage: **${u.coverage_line || 'N/A'}%** / Branch coverage: **${u.coverage_branch || 'N/A'}%**\n\n`;
+                }
+              } catch (e) { md += '> unit-summary.json の読み込みに失敗しました\n\n'; }
+            } else {
+              md += '### 🧪 Unit Tests\n> 結果データなし\n\n';
+            }
+            if (fs.existsSync('ci-artifacts/e2e-summary.json')) {
+              try {
+                const e = JSON.parse(fs.readFileSync('ci-artifacts/e2e-summary.json','utf8'));
+                md += '### 🌐 E2E Tests\n';
+                if (typeof e.tests !== 'undefined' && typeof e.passed !== 'undefined') {
+                  const icon = (e.failures || 0) + (e.errors || 0) > 0 ? '❌' : '✅';
+                  md += `${icon} **${e.passed} / ${e.tests} 件 OK**`;
+                  if ((e.failures || 0) > 0) md += ` (失敗: ${e.failures})`;
+                  if ((e.skipped || 0) > 0) md += ` (スキップ: ${e.skipped})`;
+                  md += '\n\n';
+                }
+              } catch (e) { md += '> e2e-summary.json の読み込みに失敗しました\n\n'; }
+            } else {
+              md += '### 🌐 E2E Tests\n> 結果データなし (Unit Tests が失敗した場合はスキップされます)\n\n';
+            }
+            if (fs.existsSync('/tmp/ci-metrics.json')) {
+              try {
+                const m = JSON.parse(fs.readFileSync('/tmp/ci-metrics.json','utf8'));
+                md += '### 📊 TCR (Test-to-Code Ratio)\n';
+                if (m.tcr !== null && m.tcr !== undefined) {
+                  md += `**TCR: ${m.tcr}** (テストコード: ${m.tests_lines} 行 / プロダクションコード: ${m.app_lines} 行)\n\n`;
+                } else {
+                  md += '> TCR: N/A (コード行数の取得に失敗しました)\n\n';
+                }
+              } catch (e) { md += '> ci-metrics.json の読み込みに失敗しました\n\n'; }
+            }
+            md += `---\n[詳細を確認する](https://github.com/${owner}/${repo}/commit/${headSha}/checks)\n\n_このコメントは CI 完了時に自動投稿されます。_`;
+            for (const prNumber of prs) {
+              const commentsResp = await github.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 200 });
+              const matches = commentsResp.data.filter(c => c.body && c.body.includes('<!-- ci-summary -->') && c.user && (c.user.type === 'Bot' || c.user.login === 'github-actions[bot]'));
+              if (!matches || matches.length === 0) {
+                await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body: md });
+                core.info(`PR #${prNumber} に CI テスト結果コメントを投稿しました`);
+              } else {
+                matches.sort((a,b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+                const keep = matches[0];
+                for (let i = 1; i < matches.length; i++) {
+                  try {
+                    await github.rest.issues.deleteComment({ owner, repo, comment_id: matches[i].id });
+                  } catch (e) {
+                    core.info(`コメント削除失敗 ${matches[i].id}: ${e.message || e}`);
+                  }
+                }
+                await github.rest.issues.updateComment({ owner, repo, comment_id: keep.id, body: md });
+                core.info(`PR #${prNumber} の CI テスト結果コメントを更新しました`);
+              }
+            }

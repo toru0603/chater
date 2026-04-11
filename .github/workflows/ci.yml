@@ -73,8 +73,11 @@ jobs:
               return total
 
           tests_lines = count_nonempty_py_lines('tests') if os.path.isdir('tests') else 0
+          # exclude E2E tests from TCR calculation
+          e2e_dir = os.path.join('tests', 'e2e')
+          e2e_lines = count_nonempty_py_lines(e2e_dir) if os.path.isdir(e2e_dir) else 0
+          tests_lines = max(0, tests_lines - e2e_lines)
           app_lines = count_nonempty_py_lines('app') if os.path.isdir('app') else 0
-
           print(f'Test lines (non-empty): {tests_lines}, App lines (non-empty): {app_lines}')
           if app_lines == 0:
               print('No source lines found to compute TCR', file=sys.stderr)
@@ -312,8 +315,140 @@ jobs:
           path: |
             e2e-summary.json
             e2e-results.xml
-            **/e2e-results.xml
-            /tmp/playwright-trace-*.zip
-            /tmp/e2e-page1-*.png
-            /tmp/e2e-page2-*.png
+
+  post-summary:
+    name: Post CI test summary to PR
+    runs-on: ubuntu-latest
+    needs: [unit-tests, e2e-tests]
+    if: always() && github.event_name == 'pull_request'
+    permissions:
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download unit artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: unit-artifacts
+          path: ci-artifacts/unit
+        continue-on-error: true
+
+      - name: Download e2e artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: ci-artifacts/e2e
+        continue-on-error: true
+
+      - name: Compute TCR
+        run: |
+          python - <<'PY'
+          import os, json
+          def count_nonempty_py_lines(root):
+              cnt = 0
+              if not os.path.isdir(root):
+                  return 0
+              for dirpath, dirnames, filenames in os.walk(root):
+                  dirnames[:] = [d for d in dirnames if d != '__pycache__']
+                  for fn in filenames:
+                      if not fn.endswith('.py'):
+                          continue
+                      with open(os.path.join(dirpath, fn), 'rb') as f:
+                          cnt += sum(1 for line in f if line.strip())
+              return cnt
+          tests_lines = count_nonempty_py_lines('tests')
+          # exclude E2E tests from TCR calculation
+          e2e_dir = os.path.join('tests', 'e2e')
+          e2e_lines = count_nonempty_py_lines(e2e_dir) if os.path.isdir(e2e_dir) else 0
+          tests_lines = max(0, tests_lines - e2e_lines)
+          app_lines = count_nonempty_py_lines('app')
+          tcr = round(tests_lines / app_lines, 3) if app_lines else None
+          with open('/tmp/ci-metrics.json', 'w') as f:
+              json.dump({'tests_lines': tests_lines, 'app_lines': app_lines, 'tcr': tcr}, f)
+          print(f'TCR: {tcr} (tests={tests_lines}, app={app_lines})')
+          PY
+
+      - name: Post CI test summary comment to PR
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = context.payload.pull_request && context.payload.pull_request.number;
+            if (!prNumber) { core.info('No PR number found; skipping comment'); return; }
+
+            const ciConclusion = '${{ needs.unit-tests.result }}' === 'success' && '${{ needs.e2e-tests.result }}' === 'success' ? 'success' : 'failure';
+            const conclusionEmoji = ciConclusion === 'success' ? '✅' : '❌';
+            const headSha = context.sha || '';
+
+            let md = `<!-- ci-summary -->\n## ${conclusionEmoji} CI テスト結果 (commit: \`${headSha.slice(0,7)}\`)\n\n`;
+
+            if (fs.existsSync('ci-artifacts/unit/unit-summary.json')) {
+              try {
+                const u = JSON.parse(fs.readFileSync('ci-artifacts/unit/unit-summary.json', 'utf8'));
+                md += '### 🧪 Unit Tests\n';
+                if (typeof u.tests !== 'undefined' && typeof u.passed !== 'undefined') {
+                  const icon = (u.failures || 0) + (u.errors || 0) > 0 ? '❌' : '✅';
+                  md += `${icon} **${u.passed} / ${u.tests} 件 OK**`;
+                  if ((u.failures || 0) > 0) md += ` (失敗: ${u.failures})`;
+                  if ((u.skipped || 0) > 0) md += ` (スキップ: ${u.skipped})`;
+                  md += '\n\n';
+                }
+                if (typeof u.coverage_line !== 'undefined' || typeof u.coverage_branch !== 'undefined') {
+                  md += `> Line coverage: **${u.coverage_line || 'N/A'}%** / Branch coverage: **${u.coverage_branch || 'N/A'}%**\n\n`;
+                }
+              } catch (e) { md += '### 🧪 Unit Tests\n> 結果データなし\n\n'; }
+            } else {
+              md += '### 🧪 Unit Tests\n> 結果データなし\n\n';
+            }
+
+            if (fs.existsSync('ci-artifacts/e2e/e2e-summary.json')) {
+              try {
+                const e = JSON.parse(fs.readFileSync('ci-artifacts/e2e/e2e-summary.json', 'utf8'));
+                md += '### 🌐 E2E Tests\n';
+                if (typeof e.tests !== 'undefined' && typeof e.passed !== 'undefined') {
+                  const icon = (e.failures || 0) + (e.errors || 0) > 0 ? '❌' : '✅';
+                  md += `${icon} **${e.passed} / ${e.tests} 件 OK**`;
+                  if ((e.failures || 0) > 0) md += ` (失敗: ${e.failures})`;
+                  if ((e.skipped || 0) > 0) md += ` (スキップ: ${e.skipped})`;
+                  md += '\n\n';
+                }
+              } catch (e) { md += '### 🌐 E2E Tests\n> 結果データなし\n\n'; }
+            } else {
+              md += '### 🌐 E2E Tests\n> 結果データなし (Unit Tests が失敗した場合はスキップされます)\n\n';
+            }
+
+            if (fs.existsSync('/tmp/ci-metrics.json')) {
+              try {
+                const m = JSON.parse(fs.readFileSync('/tmp/ci-metrics.json', 'utf8'));
+                md += '### 📊 TCR (Test-to-Code Ratio)\n';
+                if (m.tcr !== null && m.tcr !== undefined) {
+                  md += `**TCR: ${m.tcr}** (テストコード: ${m.tests_lines} 行 / プロダクションコード: ${m.app_lines} 行)\n\n`;
+                } else {
+                  md += '> TCR: N/A\n\n';
+                }
+              } catch (e) { md += '### 📊 TCR\n> 計算失敗\n\n'; }
+            }
+
+            md += `---\n[詳細を確認する](https://github.com/${owner}/${repo}/actions/runs/${{ github.run_id }})\n\n_このコメントは CI 完了時に自動投稿されます。_`;
+
+            const commentsResp = await github.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 200 });
+            const matches = commentsResp.data.filter(c => c.body && c.body.includes('<!-- ci-summary -->') && c.user && (c.user.type === 'Bot' || c.user.login === 'github-actions[bot]'));
+            if (!matches || matches.length === 0) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body: md });
+              core.info(`PR #${prNumber} に CI テスト結果コメントを投稿しました`);
+            } else {
+              matches.sort((a,b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+              const keep = matches[0];
+              for (let i = 1; i < matches.length; i++) {
+                try { await github.rest.issues.deleteComment({ owner, repo, comment_id: matches[i].id }); } catch(e) {}
+              }
+              await github.rest.issues.updateComment({ owner, repo, comment_id: keep.id, body: md });
+              core.info(`PR #${prNumber} の CI テスト結果コメントを更新しました`);
+            }
 
