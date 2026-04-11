@@ -6,6 +6,9 @@ set -euo pipefail
 # Default PROFILE: chater-deploy
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Required for pinentry-curses to find the terminal
+export GPG_TTY=$(tty)
 # Prefer wrapper if present, otherwise system aws-vault
 if [ -x "$ROOT_DIR/scripts/aws-vault.sh" ]; then
   AWS_VAULT_CMD="$ROOT_DIR/scripts/aws-vault.sh"
