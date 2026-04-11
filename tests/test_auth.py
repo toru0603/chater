@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import boto3
-import pytest
 from botocore.exceptions import ClientError
 
 import app.auth as auth
@@ -100,7 +99,7 @@ def test_init_db_user_already_seeded(monkeypatch):
 def test_check_credentials_get_item_error(monkeypatch):
     """check_credentials returns False when DynamoDB get_item raises ClientError."""
     from moto import mock_aws
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import patch
 
     with mock_aws():
         _patch_auth(monkeypatch)
