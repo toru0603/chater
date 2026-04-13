@@ -28,6 +28,8 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const core = require('@actions/core');
+            const github = require('@actions/github');
             const fs = require('fs');
             const payload = github.context.payload || {};
             const owner = github.context.repo.owner;
