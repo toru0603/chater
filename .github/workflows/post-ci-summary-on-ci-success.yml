@@ -28,8 +28,11 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const core = (function(){ try { return require('@actions/core'); } catch(e){ return (typeof core !== 'undefined' ? core : { info:()=>{} }); } })();
+            const github = (function(){ try { return require('@actions/github'); } catch(e){ return (typeof github !== 'undefined' ? github : undefined); } })();
+            const context = (github && github.context) || (typeof context !== 'undefined' ? context : {});
+            const payload = context.payload || {};
             const fs = require('fs');
-            const payload = github.context.payload || {};
             const owner = github.context.repo.owner;
             const repo = github.context.repo.repo;
             let prs = [];
