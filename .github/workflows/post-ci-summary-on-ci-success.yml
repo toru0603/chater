@@ -212,7 +212,10 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const core = require('@actions/core');
+            const github = require('@actions/github');
             const fs = require('fs');
+            const context = github.context;
             const owner = github.context.repo.owner;
             const repo = github.context.repo.repo;
             const data = fs.existsSync('ci-artifacts.json') ? JSON.parse(fs.readFileSync('ci-artifacts.json','utf8')) : { prs: [] };
