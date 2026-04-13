@@ -184,10 +184,10 @@ def _handle_message(event: dict, connection_id: str, table, apigw_client) -> dic
                 _send(apigw_client, peer["connectionId"], {
                     "type": "participant-joined",
                     "room_code": conn["roomCode"],
-                    "participant": {
-                        "id": conn["participantId"], "name": name,
-                        "role": conn["role"], "color": conn["color"],
-                    },
+                    "id": conn["participantId"],
+                    "name": name,
+                    "role": conn["role"],
+                    "color": conn["color"],
                 }, table)
         return {"statusCode": 200}
 
