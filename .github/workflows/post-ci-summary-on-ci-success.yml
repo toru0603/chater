@@ -28,15 +28,12 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const core = (function(){ try { return require('@actions/core'); } catch(e){ return (typeof core !== 'undefined' ? core : { info:()=>{} }); } })();
-            const github = (function(){ try { return require('@actions/github'); } catch(e){ return (typeof github !== 'undefined' ? github : undefined); } })();
-            const context = (github && github.context) || (typeof context !== 'undefined' ? context : {});
             const payload = context.payload || {};
             const fs = require('fs');
-            const owner = github.context.repo.owner;
-            const repo = github.context.repo.repo;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
             let prs = [];
-            let headSha = github.context.sha || '';
+            let headSha = context.sha || '';
             let runId = null;
 
             if (payload.workflow_run) {
@@ -215,15 +212,12 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const core = require('@actions/core');
-            const github = require('@actions/github');
             const fs = require('fs');
-            const context = github.context;
-            const owner = github.context.repo.owner;
-            const repo = github.context.repo.repo;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
             const data = fs.existsSync('ci-artifacts.json') ? JSON.parse(fs.readFileSync('ci-artifacts.json','utf8')) : { prs: [] };
             let prs = data.prs || [];
-            const headSha = data.head_sha || github.context.sha || '';
+            const headSha = data.head_sha || context.sha || '';
             const ciConclusion = (context.payload.workflow_run && context.payload.workflow_run.conclusion) || 'unknown';
             const conclusionEmoji = ciConclusion === 'success' ? '✅' : ciConclusion === 'failure' ? '❌' : '⚠️';
             if ((!prs || prs.length === 0) && headSha) {
