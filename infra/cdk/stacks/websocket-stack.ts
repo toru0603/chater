@@ -54,6 +54,8 @@ export class WebSocketStack extends cdk.Stack {
 
     connectionsTable.grantReadWriteData(wsFn);
 
+    const stageName = (props && props.stage) ? props.stage : 'prod';
+
     const wsApiName = stageName !== 'prod' ? `ChaterWsApi-${stageName}` : 'ChaterWsApi';
 
     const wsApi = new WebSocketApi(this, 'WsApi', {
@@ -68,8 +70,6 @@ export class WebSocketStack extends cdk.Stack {
         integration: new WebSocketLambdaIntegration('DefaultIntegration', wsFn),
       },
     });
-
-    const stageName = (props && props.stage) ? props.stage : 'prod';
 
     const wsStage = new WebSocketStage(this, 'WsStage', {
       webSocketApi: wsApi,
