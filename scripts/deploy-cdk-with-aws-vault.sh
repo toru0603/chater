@@ -52,6 +52,38 @@ echo "Detected AWS account: $ACCOUNT"
 echo "Bootstrapping CDK into aws://$ACCOUNT/$AWS_REGION"
 $AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk bootstrap aws://$ACCOUNT/$AWS_REGION -c stage=$STAGE --require-approval never
 
+# --- CloudFront stage: query API URLs from CloudFormation and deploy ---
+if [ "$STAGE" = "cloudfront" ]; then
+  echo "Stage=cloudfront: fetching API URLs from CloudFormation"
+  PROD_API_URL="$($AWS_VAULT_CMD exec "$PROFILE" --no-session -- aws cloudformation describe-stacks \
+    --stack-name ChaterApiStack \
+    --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
+    --output text)"
+  DEV_API_URL="$($AWS_VAULT_CMD exec "$PROFILE" --no-session -- aws cloudformation describe-stacks \
+    --stack-name ChaterApiStack-dev \
+    --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
+    --output text)"
+
+  if [ -z "$PROD_API_URL" ] || [ -z "$DEV_API_URL" ]; then
+    echo "ERROR: Could not fetch prod or dev API URL from CloudFormation. Deploy prod and dev first." >&2
+    exit 1
+  fi
+
+  echo "Prod API URL: $PROD_API_URL"
+  echo "Dev  API URL: $DEV_API_URL"
+
+  $AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk deploy ChaterCloudFrontStack \
+    -c stage=cloudfront \
+    -c prodApiUrl="$PROD_API_URL" \
+    -c devApiUrl="$DEV_API_URL" \
+    --require-approval never
+
+  echo "CDK deploy finished. Review output above for CloudFront distribution URL."
+  exit 0
+fi
+
+# --- Normal stage (prod/dev): deploy API/WebSocket/Dynamo stacks ---
+
 # Deploy ApiStack first to avoid cross-stack export conflicts,
 # then deploy all stacks to apply any remaining updates.
 echo "Choosing ChaterApiStack target for stage '$STAGE' (prefer stage-specific name)"
