@@ -20,12 +20,13 @@ else
 fi
 
 PROFILE="${1:-chater-deploy}"
+STAGE="${2:-${DEPLOY_STAGE:-prod}}"
 export AWS_VAULT_BACKEND="${AWS_VAULT_BACKEND:-pass}"
 AWS_REGION="${AWS_REGION:-ap-northeast-1}"
 CDK_DIR="$ROOT_DIR/infra/cdk"
 
 echo "Using aws-vault command: $AWS_VAULT_CMD"
-echo "Profile: $PROFILE, Backend: $AWS_VAULT_BACKEND, Region: $AWS_REGION"
+echo "Profile: $PROFILE, Stage: $STAGE, Backend: $AWS_VAULT_BACKEND, Region: $AWS_REGION"
 
 # Ensure dependencies are installed in infra/cdk
 cd "$CDK_DIR"
@@ -49,14 +50,14 @@ echo "Detected AWS account: $ACCOUNT"
 
 # Bootstrap (creates CDK assets bucket and roles)
 echo "Bootstrapping CDK into aws://$ACCOUNT/$AWS_REGION"
-$AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk bootstrap aws://$ACCOUNT/$AWS_REGION --require-approval never
+$AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk bootstrap aws://$ACCOUNT/$AWS_REGION -c stage=$STAGE --require-approval never
 
 # Deploy ApiStack first to avoid cross-stack export conflicts,
 # then deploy all stacks to apply any remaining updates.
 echo "Deploying ChaterApiStack first (removes cross-stack references if any)"
-$AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk deploy ChaterApiStack --require-approval never
+$AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk deploy ChaterApiStack -c stage=$STAGE --require-approval never
 
 echo "Deploying all remaining CDK stacks"
-$AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk deploy --all --require-approval never
+$AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk deploy --all -c stage=$STAGE --require-approval never
 
 echo "CDK deploy finished. Review output above for stack outputs and endpoints."

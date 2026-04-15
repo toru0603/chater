@@ -8,6 +8,7 @@ import * as path from 'path';
 
 export interface ApiStackProps extends cdk.StackProps {
   wsUrl: string;
+  stage?: string;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -23,6 +24,8 @@ export class ApiStack extends cdk.Stack {
     });
 
     const projectRoot = path.join(__dirname, '../../../');
+
+    const rootPath = (props && props.stage) ? props.stage : 'prod';
 
     const fn = new lambda.Function(this, 'AppHandler', {
       runtime: lambda.Runtime.PYTHON_3_11,
@@ -44,7 +47,7 @@ export class ApiStack extends cdk.Stack {
       }),
       environment: {
         WS_URL: props.wsUrl,
-        ROOT_PATH: '/prod',
+        ROOT_PATH: `/${rootPath}`,
         USERS_TABLE: usersTable.tableName,
       },
     });
