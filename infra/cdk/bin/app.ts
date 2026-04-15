@@ -6,8 +6,9 @@ import { ApiStack } from '../stacks/api-stack';
 import { WebSocketStack } from '../stacks/websocket-stack';
 
 const app = new cdk.App();
+const stage = app.node.tryGetContext('stage') || process.env.DEPLOY_STAGE || process.env.STAGE || 'prod';
 const env = { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION || 'ap-northeast-1' };
 
 new DynamoStack(app, 'ChaterDynamoStack', { env });
-const wsStack = new WebSocketStack(app, 'ChaterWebSocketStack', { env });
-new ApiStack(app, 'ChaterApiStack', { env, wsUrl: wsStack.wsUrl });
+const wsStack = new WebSocketStack(app, 'ChaterWebSocketStack', { env, stage });
+new ApiStack(app, 'ChaterApiStack', { env, stage, wsUrl: wsStack.wsUrl });

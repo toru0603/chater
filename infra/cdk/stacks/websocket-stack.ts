@@ -8,10 +8,14 @@ import { Construct } from 'constructs';
 import * as path from 'path';
 import { RemovalPolicy } from 'aws-cdk-lib';
 
+export interface WebSocketStackProps extends cdk.StackProps {
+  stage?: string;
+}
+
 export class WebSocketStack extends cdk.Stack {
   public readonly wsUrl: string;
 
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: WebSocketStackProps) {
     super(scope, id, props);
 
     const connectionsTable = new dynamodb.Table(this, 'ConnectionsTable', {
@@ -63,9 +67,11 @@ export class WebSocketStack extends cdk.Stack {
       },
     });
 
+    const stageName = (props && props.stage) ? props.stage : 'prod';
+
     const wsStage = new WebSocketStage(this, 'WsStage', {
       webSocketApi: wsApi,
-      stageName: 'prod',
+      stageName: stageName,
       autoDeploy: true,
     });
 
@@ -73,7 +79,7 @@ export class WebSocketStack extends cdk.Stack {
     wsFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['execute-api:ManageConnections'],
       resources: [
-        `arn:aws:execute-api:${this.region}:${this.account}:${wsApi.apiId}/prod/POST/@connections/*`,
+        `arn:aws:execute-api:${this.region}:${this.account}:${wsApi.apiId}/${stageName}/POST/@connections/*`,
       ],
     }));
 

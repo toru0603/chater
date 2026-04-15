@@ -11,8 +11,8 @@ chater を AWS へデプロイする手順です。インフラは AWS CDK（Typ
 
 デプロイ後のエンドポイント例:
 
-- REST API: `https://<id>.execute-api.ap-northeast-1.amazonaws.com/prod/`
-- WebSocket: `wss://<id>.execute-api.ap-northeast-1.amazonaws.com/prod`
+- REST API: `https://<id>.execute-api.ap-northeast-1.amazonaws.com/<stage>/`
+- WebSocket: `wss://<id>.execute-api.ap-northeast-1.amazonaws.com/<stage>`
 
 ---
 
@@ -80,8 +80,10 @@ export AWS_VAULT_BACKEND=pass
 # main を最新に
 git checkout main && git pull origin main
 
-# デプロイ実行（GPG パスフレーズの入力を求められます）
-AWS_VAULT_BACKEND=pass ./scripts/deploy-cdk-with-aws-vault.sh chater-deploy
+# デプロイ実行（第2引数でステージを指定できます、デフォルトは prod）
+# 例: dev ステージへデプロイする場合
+# AWS_VAULT_BACKEND=pass ./scripts/deploy-cdk-with-aws-vault.sh chater-deploy dev
+AWS_VAULT_BACKEND=pass ./scripts/deploy-cdk-with-aws-vault.sh chater-deploy [stage]
 ```
 
 スクリプトが行うこと:
@@ -112,16 +114,16 @@ AWS_VAULT_BACKEND=pass AWS_REGION=us-east-1 ./scripts/deploy-cdk-with-aws-vault.
 デプロイ完了時の出力（Outputs）に URL が表示されます:
 
 ```
-ChaterApiStack.ApiUrl = https://<id>.execute-api.ap-northeast-1.amazonaws.com/prod/
-ChaterWebSocketStack.WsUrl = wss://<id>.execute-api.ap-northeast-1.amazonaws.com/prod
+ChaterApiStack.ApiUrl = https://<id>.execute-api.ap-northeast-1.amazonaws.com/<stage>/
+ChaterWebSocketStack.WsUrl = wss://<id>.execute-api.ap-northeast-1.amazonaws.com/<stage>
 ```
 
 ### 動作確認
 
 ```bash
 # ログイン画面が返れば OK（307 → 200）
-curl -I https://<api-url>/prod/
-curl -I https://<api-url>/prod/login
+curl -I https://<api-url>/<stage>/
+curl -I https://<api-url>/<stage>/login
 ```
 
 ### ユーザーの確認
