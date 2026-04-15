@@ -48,11 +48,8 @@ fi
 
 echo "Detected AWS account: $ACCOUNT"
 
-# Bootstrap (creates CDK assets bucket and roles)
-echo "Bootstrapping CDK into aws://$ACCOUNT/$AWS_REGION"
-$AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk bootstrap aws://$ACCOUNT/$AWS_REGION -c stage=$STAGE --require-approval never
-
-# --- CloudFront stage: query API URLs from CloudFormation and deploy ---
+# --- CloudFront stage: query API URLs from CloudFormation before bootstrap ---
+CDK_EXTRA_CONTEXT=""
 if [ "$STAGE" = "cloudfront" ]; then
   echo "Stage=cloudfront: fetching API URLs from CloudFormation"
   PROD_API_URL="$($AWS_VAULT_CMD exec "$PROFILE" --no-session -- aws cloudformation describe-stacks \
@@ -71,12 +68,17 @@ if [ "$STAGE" = "cloudfront" ]; then
 
   echo "Prod API URL: $PROD_API_URL"
   echo "Dev  API URL: $DEV_API_URL"
+  CDK_EXTRA_CONTEXT="-c prodApiUrl=${PROD_API_URL} -c devApiUrl=${DEV_API_URL}"
+fi
 
+# Bootstrap (creates CDK assets bucket and roles)
+echo "Bootstrapping CDK into aws://$ACCOUNT/$AWS_REGION"
+$AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk bootstrap aws://$ACCOUNT/$AWS_REGION \
+  -c stage=$STAGE $CDK_EXTRA_CONTEXT --require-approval never
+
+if [ "$STAGE" = "cloudfront" ]; then
   $AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk deploy ChaterCloudFrontStack \
-    -c stage=cloudfront \
-    -c prodApiUrl="$PROD_API_URL" \
-    -c devApiUrl="$DEV_API_URL" \
-    --require-approval never
+    -c stage=cloudfront $CDK_EXTRA_CONTEXT --require-approval never
 
   echo "CDK deploy finished. Review output above for CloudFront distribution URL."
   exit 0
