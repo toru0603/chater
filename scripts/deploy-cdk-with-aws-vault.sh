@@ -54,8 +54,29 @@ $AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk bootstrap aws://$ACCOUNT/
 
 # Deploy ApiStack first to avoid cross-stack export conflicts,
 # then deploy all stacks to apply any remaining updates.
-echo "Deploying ChaterApiStack first (removes cross-stack references if any)"
-$AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk deploy ChaterApiStack -c stage=$STAGE --require-approval never
+echo "Choosing ChaterApiStack target for stage '$STAGE' (prefer stage-specific name)"
+CDK_STACK_BASE="ChaterApiStack"
+CDK_STACK_STAGE="${CDK_STACK_BASE}-${STAGE}"
+
+# list stacks available for this stage (allow failure)
+AVAILABLE_STACKS="$($AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk ls -c stage=$STAGE || true)"
+TARGET_STACK=""
+if echo "$AVAILABLE_STACKS" | grep -xq "$CDK_STACK_STAGE"; then
+  TARGET_STACK="$CDK_STACK_STAGE"
+elif echo "$AVAILABLE_STACKS" | grep -xq "$CDK_STACK_BASE"; then
+  TARGET_STACK="$CDK_STACK_BASE"
+else
+  echo "Warning: No $CDK_STACK_BASE or ${CDK_STACK_BASE}-${STAGE} found; will deploy all stacks instead"
+fi
+
+if [ -n "$TARGET_STACK" ]; then
+  echo "Deploying $TARGET_STACK (removes cross-stack references if any)"
+  if ! $AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk deploy "$TARGET_STACK" -c stage=$STAGE --require-approval never; then
+    echo "Targeted deploy of $TARGET_STACK failed; continuing with --all"
+  fi
+else
+  echo "Skipping targeted deploy"
+fi
 
 echo "Deploying all remaining CDK stacks"
 $AWS_VAULT_CMD exec "$PROFILE" --no-session -- npx cdk deploy --all -c stage=$STAGE --require-approval never
