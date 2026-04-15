@@ -59,6 +59,9 @@ export class ApiStack extends cdk.Stack {
       proxy: true,
       restApiName: 'ChaterApi',
       binaryMediaTypes: ['*/*'],
+      deployOptions: {
+        stageName: rootPath,
+      },
     });
 
     new cdk.CfnOutput(this, 'ApiUrl', { value: api.url });
