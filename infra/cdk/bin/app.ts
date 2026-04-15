@@ -9,6 +9,8 @@ const app = new cdk.App();
 const stage = app.node.tryGetContext('stage') || process.env.DEPLOY_STAGE || process.env.STAGE || 'prod';
 const env = { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION || 'ap-northeast-1' };
 
-new DynamoStack(app, 'ChaterDynamoStack', { env });
-const wsStack = new WebSocketStack(app, 'ChaterWebSocketStack', { env, stage });
-new ApiStack(app, 'ChaterApiStack', { env, stage, wsUrl: wsStack.wsUrl });
+const nameSuffix = stage === 'prod' ? '' : `-${stage}`;
+
+new DynamoStack(app, `ChaterDynamoStack${nameSuffix}`, { env, stage });
+const wsStack = new WebSocketStack(app, `ChaterWebSocketStack${nameSuffix}`, { env, stage });
+new ApiStack(app, `ChaterApiStack${nameSuffix}`, { env, stage, wsUrl: wsStack.wsUrl });

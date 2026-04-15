@@ -3,7 +3,9 @@ import { RemovalPolicy } from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { Construct } from 'constructs';
 
-export interface DynamoStackProps extends cdk.StackProps {}
+export interface DynamoStackProps extends cdk.StackProps {
+  stage?: string;
+}
 
 export class DynamoStack extends cdk.Stack {
   public readonly table: dynamodb.Table;

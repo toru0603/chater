@@ -15,8 +15,9 @@ export class ApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
+    const usersTableName = (props && props.stage && props.stage !== 'prod') ? `ChaterUsers-${props.stage}` : 'ChaterUsers';
     const usersTable = new dynamodb.Table(this, 'UsersTable', {
-      tableName: 'ChaterUsers',
+      tableName: usersTableName,
       partitionKey: { name: 'username', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       pointInTimeRecovery: true,
