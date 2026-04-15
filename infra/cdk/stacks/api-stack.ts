@@ -55,10 +55,12 @@ export class ApiStack extends cdk.Stack {
 
     usersTable.grantReadWriteData(fn);
 
+    const apiName = rootPath !== 'prod' ? `ChaterApi-${rootPath}` : 'ChaterApi';
+
     const api = new apigw.LambdaRestApi(this, 'RestApi', {
       handler: fn,
       proxy: true,
-      restApiName: 'ChaterApi',
+      restApiName: apiName,
       binaryMediaTypes: ['*/*'],
       deployOptions: {
         stageName: rootPath,
