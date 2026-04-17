@@ -19,7 +19,7 @@ jobs:
     name: CDK Deploy
     runs-on: ubuntu-latest
     env:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_REGION: ${{ secrets.AWS_REGION || 'ap-northeast-1' }}
       STAGE: ${{ github.event.inputs.stage || 'prod' }}
 
     steps:
@@ -44,7 +44,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v3
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION || 'ap-northeast-1' }}
           role-session-name: github-actions-cdk-deploy
 
       - name: CDK Deploy
