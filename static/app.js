@@ -25,6 +25,15 @@ const participantColors = {}; // peerId -> color
 let ownParticipantId = null;
 let ownName = null;
 
+// Reconnect state
+const MAX_RECONNECT_ATTEMPTS = 5;
+let reconnectAttempts = 0;
+let reconnectTimer = null;
+let intentionalDisconnect = false;
+let currentRoomCode = null;
+let currentName = null;
+const iceReconnectTimers = {}; // peerId -> timer
+
 const rtcConfig = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
@@ -92,6 +101,52 @@ function ensurePeerConnection(peerId) {
       removeRemoteVideoElement(peerId);
       try { pc.close(); } catch (e) {}
       delete peers[peerId];
+    }
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    const state = pc.iceConnectionState;
+    if (state === 'failed') {
+      clearTimeout(iceReconnectTimers[peerId]);
+      delete iceReconnectTimers[peerId];
+      try { pc.close(); } catch (e) {}
+      delete peers[peerId];
+      removeRemoteVideoElement(peerId);
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        setStatus('再接続中...');
+        setTimeout(async () => {
+          if (!peers[peerId]) {
+            const newPc = ensurePeerConnection(peerId);
+            const offer = await newPc.createOffer();
+            await newPc.setLocalDescription(offer);
+            send({ type: 'offer', target: peerId, data: newPc.localDescription });
+          }
+        }, 500);
+      }
+    } else if (state === 'disconnected') {
+      // Wait 3 s to see if the connection self-recovers before acting
+      iceReconnectTimers[peerId] = setTimeout(() => {
+        const current = peers[peerId];
+        if (current && current.iceConnectionState !== 'connected' && current.iceConnectionState !== 'completed') {
+          try { current.close(); } catch (e) {}
+          delete peers[peerId];
+          removeRemoteVideoElement(peerId);
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            setStatus('再接続中...');
+            setTimeout(async () => {
+              if (!peers[peerId]) {
+                const newPc = ensurePeerConnection(peerId);
+                const offer = await newPc.createOffer();
+                await newPc.setLocalDescription(offer);
+                send({ type: 'offer', target: peerId, data: newPc.localDescription });
+              }
+            }, 500);
+          }
+        }
+      }, 3000);
+    } else if (state === 'connected' || state === 'completed') {
+      clearTimeout(iceReconnectTimers[peerId]);
+      delete iceReconnectTimers[peerId];
     }
   };
 
@@ -193,43 +248,40 @@ if (messageInput) messageInput.addEventListener('keypress', (e) => {
   if (e.key === 'Enter') sendMessage();
 });
 
-async function startCall() {
-  const roomCode = roomCodeInput.value.trim();
-  const name = nameInput.value.trim() || 'Guest';
+function _buildWsUrl(roomCode) {
+  if (window.WS_URL) {
+    return `${window.WS_URL}?roomCode=${encodeURIComponent(roomCode)}`;
+  }
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${location.host}/ws/${encodeURIComponent(roomCode)}`;
+}
 
-  if (!roomCode) { setStatus('待ち受け番号を入力してください'); return; }
-
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    localVideo.srcObject = localStream;
-      if (toggleCameraBtn) {
-        toggleCameraBtn.disabled = false;
-        cameraEnabled = localStream.getVideoTracks().some(t => t.enabled);
-        toggleCameraBtn.textContent = cameraEnabled ? 'カメラON' : 'カメラOFF';
-      }
-      if (toggleAudioBtn) {
-        toggleAudioBtn.disabled = false;
-        audioEnabled = localStream.getAudioTracks().some(t => t.enabled);
-        toggleAudioBtn.textContent = audioEnabled ? 'マイクON' : 'マイクOFF';
-      }
-
-  } catch (err) {
-    setStatus(`カメラ/マイクを取得できません: ${err.message}`);
+function scheduleReconnect() {
+  if (intentionalDisconnect) return;
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    setStatus('再接続に失敗しました。ページをリロードしてください。');
+    joinBtn.disabled = false;
+    leaveBtn.disabled = true;
     return;
   }
+  const delay = Math.pow(2, reconnectAttempts) * 1000;
+  reconnectAttempts++;
+  setStatus(`再接続中... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}回目)`);
+  reconnectTimer = setTimeout(() => {
+    try { Object.values(peers).forEach(pc => pc.close()); } catch (e) {}
+    Object.keys(peers).forEach(k => delete peers[k]);
+    Object.keys(remoteVideos).forEach(k => removeRemoteVideoElement(k));
+    connectWebSocket(currentRoomCode, currentName);
+  }, delay);
+}
 
-  // Use WS_URL injected by server (API Gateway WebSocket) or fall back to
-  // local FastAPI WebSocket route for development.
-  function _buildWsUrl(roomCode) {
-    if (window.WS_URL) {
-      return `${window.WS_URL}?roomCode=${encodeURIComponent(roomCode)}`;
-    }
-    const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${location.host}/ws/${encodeURIComponent(roomCode)}`;
-  }
+function connectWebSocket(roomCode, name) {
+  if (socket) { try { socket.close(); } catch (e) {} socket = null; }
 
   socket = new WebSocket(_buildWsUrl(roomCode));
+
   socket.onopen = () => {
+    reconnectAttempts = 0;
     send({ type: 'join', name });
     setStatus('サーバに接続しました');
     joinBtn.disabled = true; leaveBtn.disabled = false;
@@ -370,12 +422,55 @@ async function startCall() {
     if (message.type === 'error') { setStatus(message.message); }
   };
 
+  socket.onerror = () => {};
+
   socket.onclose = () => {
-    joinBtn.disabled = false; leaveBtn.disabled = true; setStatus('切断しました');
+    if (intentionalDisconnect) {
+      joinBtn.disabled = false; leaveBtn.disabled = true; setStatus('切断しました');
+      return;
+    }
+    scheduleReconnect();
   };
 }
 
+async function startCall() {
+  const roomCode = roomCodeInput.value.trim();
+  const name = nameInput.value.trim() || 'Guest';
+
+  if (!roomCode) { setStatus('待ち受け番号を入力してください'); return; }
+
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    localVideo.srcObject = localStream;
+      if (toggleCameraBtn) {
+        toggleCameraBtn.disabled = false;
+        cameraEnabled = localStream.getVideoTracks().some(t => t.enabled);
+        toggleCameraBtn.textContent = cameraEnabled ? 'カメラON' : 'カメラOFF';
+      }
+      if (toggleAudioBtn) {
+        toggleAudioBtn.disabled = false;
+        audioEnabled = localStream.getAudioTracks().some(t => t.enabled);
+        toggleAudioBtn.textContent = audioEnabled ? 'マイクON' : 'マイクOFF';
+      }
+
+  } catch (err) {
+    setStatus(`カメラ/マイクを取得できません: ${err.message}`);
+    return;
+  }
+
+  currentRoomCode = roomCode;
+  currentName = name;
+  intentionalDisconnect = false;
+  reconnectAttempts = 0;
+  connectWebSocket(roomCode, name);
+}
+
 function leaveCall() {
+  intentionalDisconnect = true;
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  reconnectAttempts = 0;
+  Object.keys(iceReconnectTimers).forEach(k => { clearTimeout(iceReconnectTimers[k]); delete iceReconnectTimers[k]; });
   send({ type: 'leave' });
   try { Object.values(peers).forEach(pc => pc.close()); } catch (e) {}
   Object.keys(peers).forEach(k => delete peers[k]);
