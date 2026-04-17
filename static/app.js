@@ -34,6 +34,42 @@ let currentRoomCode = null;
 let currentName = null;
 const iceReconnectTimers = {}; // peerId -> timer
 
+// --- Notification: sound toggle ---
+let soundEnabled = localStorage.getItem('chater-sound') !== 'off';
+
+function showToast(message, color) {
+  const toast = document.createElement('div');
+  toast.className = 'toast toast-enter';
+  if (color) toast.style.borderLeftColor = color;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  // trigger reflow so enter animation plays
+  void toast.offsetWidth;
+  toast.classList.add('toast-visible');
+  setTimeout(() => {
+    toast.classList.remove('toast-visible');
+    toast.classList.add('toast-leave');
+    toast.addEventListener('transitionend', () => toast.remove(), { once: true });
+  }, 3000);
+}
+
+function playNotificationSound(type) {
+  if (!soundEnabled) return;
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = type === 'join' ? 880 : 440;
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.4);
+  } catch (e) { /* AudioContext unavailable in some environments */ }
+}
+
 const rtcConfig = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
@@ -334,6 +370,8 @@ function connectWebSocket(roomCode, name) {
     if (message.type === 'participant-joined') {
       setStatus(`参加者が増えました: ${message.name}`);
       if (message.color) participantColors[message.id] = message.color;
+      showToast(`${message.name || '参加者'} が入室しました 🎉`, message.color);
+      playNotificationSound('join');
       createRemoteVideoElement(message.id, message.name);
       const tile = document.querySelector(`[data-peer-id="${message.id}"]`);
       if (tile) {
@@ -346,6 +384,8 @@ function connectWebSocket(roomCode, name) {
     if (message.type === 'matched') {
       const p = message.peer || {};
       if (p.color) participantColors[p.id] = p.color;
+      showToast(`${p.name || '相手'} とマッチしました 🎉`, p.color);
+      playNotificationSound('join');
       createRemoteVideoElement(p.id, p.name);
       const tileMatched = document.querySelector(`[data-peer-id="${p.id}"]`);
       if (tileMatched) {
@@ -370,6 +410,8 @@ function connectWebSocket(roomCode, name) {
     if (message.type === 'peer-left') {
       removeRemoteVideoElement(message.id);
       if (peers[message.id]) { try { peers[message.id].close(); } catch(e){} delete peers[message.id]; }
+      showToast('相手が退出しました');
+      playNotificationSound('leave');
       // ensure message is visible after connection state updates
       setTimeout(() => { setStatus('相手が退出しました'); }, 50);
       return;
@@ -377,6 +419,8 @@ function connectWebSocket(roomCode, name) {
 
     if (message.type === 'participant-left') {
       setStatus(`${message.name} が退出しました`);
+      showToast(`${message.name || '参加者'} が退出しました`);
+      playNotificationSound('leave');
       removeRemoteVideoElement(message.id);
       // close pc if exists
       if (peers[message.id]) { try { peers[message.id].close(); } catch(e){} delete peers[message.id]; }
@@ -512,3 +556,12 @@ if (toggleAudioBtn) {
   });
 }
 
+const toggleSoundBtn = document.getElementById('toggleSoundBtn');
+if (toggleSoundBtn) {
+  toggleSoundBtn.textContent = soundEnabled ? '🔔 通知音ON' : '🔕 通知音OFF';
+  toggleSoundBtn.addEventListener('click', () => {
+    soundEnabled = !soundEnabled;
+    localStorage.setItem('chater-sound', soundEnabled ? 'on' : 'off');
+    toggleSoundBtn.textContent = soundEnabled ? '🔔 通知音ON' : '🔕 通知音OFF';
+  });
+}
