@@ -22,7 +22,8 @@ const peers = {}; // peerId -> RTCPeerConnection
 const remoteVideos = {}; // peerId -> HTMLVideoElement
 const pendingCandidates = {}; // peerId -> []
 const participantColors = {}; // peerId -> color
-      const db = Math.max(0, totalBytes - lastStatsData[peerId].bytes);
+let ownParticipantId = null;
+let ownName = null;
 
 // Quality indicator state
 const statsIntervals = {}; // peerId -> intervalId
