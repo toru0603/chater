@@ -260,6 +260,22 @@ def test_browser_playwright_match_and_leave(server):
                     break
                 time.sleep(0.1)
             assert left, "Peer tile did not disappear within timeout"
+
+            # Verify a leave toast appeared on page1 after Bob left
+            toast_appeared = False
+            deadline = time.time() + 5.0
+            while time.time() < deadline:
+                try:
+                    toast_text = page1.evaluate(
+                        "() => { const t = document.querySelector('.toast'); return t ? t.textContent : ''; }"
+                    )
+                    if toast_text:
+                        toast_appeared = True
+                        break
+                except Exception:
+                    pass
+                time.sleep(0.1)
+            assert toast_appeared, "Leave toast did not appear on page1 after peer left"
         finally:
             # Always attempt to save traces/screenshots and stop tracing so failures are captured
             try:
