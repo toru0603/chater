@@ -25,6 +25,119 @@ const participantColors = {}; // peerId -> color
 let ownParticipantId = null;
 let ownName = null;
 
+// Quality indicator state
+const statsIntervals = {}; // peerId -> intervalId
+const lastStatsData = {}; // peerId -> { bytes, ts }
+const lastQuality = {}; // peerId -> 'good'|'fair'|'poor'
+
+const QUALITY_LABELS = { good: '良好', fair: '普通', poor: '低品質', measuring: '計測中' };
+
+function getQualityLevel(rttMs, lossRate) {
+  if (rttMs < 150 && lossRate < 0.02) return 'good';
+  if (rttMs < 300 && lossRate < 0.05) return 'fair';
+  return 'poor';
+}
+
+function updateQualityBadge(peerId, rttMs, lossRate, bitrateKbps) {
+  const tile = document.querySelector(`[data-peer-id="${peerId}"]`);
+  if (!tile) return;
+  const level = rttMs !== null ? getQualityLevel(rttMs, lossRate) : 'measuring';
+
+  let badge = tile.querySelector('.quality-badge');
+  if (!badge) {
+    badge = document.createElement('div');
+    badge.className = 'quality-badge';
+    badge.innerHTML =
+      '<span class="quality-dot"></span>' +
+      '<span class="quality-label"></span>' +
+      '<div class="quality-detail"></div>';
+    badge.addEventListener('click', (e) => {
+      e.stopPropagation();
+      badge.classList.toggle('open');
+    });
+    document.addEventListener('click', () => badge.classList.remove('open'));
+    tile.appendChild(badge);
+  }
+
+  badge.dataset.quality = level;
+  badge.querySelector('.quality-label').textContent = QUALITY_LABELS[level];
+
+  const detail = badge.querySelector('.quality-detail');
+  if (rttMs !== null) {
+    detail.innerHTML =
+      `<div>RTT: <strong>${rttMs}ms</strong></div>` +
+      `<div>パケットロス: <strong>${(lossRate * 100).toFixed(1)}%</strong></div>` +
+      `<div>ビットレート: <strong>${bitrateKbps}kbps</strong></div>`;
+  } else {
+    detail.innerHTML = '<div>統計情報を収集中...</div>';
+  }
+
+  if (lastQuality[peerId] && lastQuality[peerId] !== level) {
+    if (level === 'poor') {
+      showToast('⚠️ 接続品質が低下しています', '#ef4444');
+    } else if (level === 'fair' && lastQuality[peerId] === 'good') {
+      showToast('📶 接続品質が普通になりました', '#f59e0b');
+    } else if (level === 'good') {
+      showToast('✅ 接続品質が回復しました', '#22c55e');
+    }
+  }
+  lastQuality[peerId] = level;
+}
+
+async function pollStats(peerId) {
+  const pc = peers[peerId];
+  if (!pc) return;
+  try {
+    const stats = await pc.getStats();
+    let rttMs = null;
+    let totalLost = 0;
+    let totalReceived = 0;
+    let totalBytes = 0;
+    const now = Date.now();
+    stats.forEach(report => {
+      if (report.type === 'remote-inbound-rtp' && report.roundTripTime != null) {
+        rttMs = Math.round(report.roundTripTime * 1000);
+      }
+      if (report.type === 'candidate-pair' && report.state === 'succeeded' &&
+          report.currentRoundTripTime != null && rttMs === null) {
+        rttMs = Math.round(report.currentRoundTripTime * 1000);
+      }
+      if (report.type === 'inbound-rtp') {
+        totalLost += report.packetsLost || 0;
+        totalReceived += report.packetsReceived || 0;
+        totalBytes += report.bytesReceived || 0;
+      }
+    });
+    const lossRate = (totalLost + totalReceived) > 0
+      ? totalLost / (totalLost + totalReceived) : 0;
+    let bitrateKbps = 0;
+    if (lastStatsData[peerId]) {
+      const dt = (now - lastStatsData[peerId].ts) / 1000;
+      const db = totalBytes - lastStatsData[peerId].bytes;
+      bitrateKbps = dt > 0 ? Math.round((db * 8) / (dt * 1000)) : 0;
+    }
+    lastStatsData[peerId] = { bytes: totalBytes, ts: now };
+    updateQualityBadge(peerId, rttMs, lossRate, bitrateKbps);
+  } catch (_e) {
+    // Connection may have been closed
+  }
+}
+
+function startStatsPolling(peerId) {
+  stopStatsPolling(peerId);
+  pollStats(peerId);
+  statsIntervals[peerId] = setInterval(() => pollStats(peerId), 2000);
+}
+
+function stopStatsPolling(peerId) {
+  if (statsIntervals[peerId]) {
+    clearInterval(statsIntervals[peerId]);
+    delete statsIntervals[peerId];
+  }
+  delete lastStatsData[peerId];
+  delete lastQuality[peerId];
+}
+
 // Reconnect state
 const MAX_RECONNECT_ATTEMPTS = 5;
 let reconnectAttempts = 0;
@@ -133,7 +246,11 @@ function ensurePeerConnection(peerId) {
 
   pc.onconnectionstatechange = () => {
     setStatus(`接続状態: ${pc.connectionState}`);
+    if (pc.connectionState === 'connected') {
+      startStatsPolling(peerId);
+    }
     if (pc.connectionState === 'failed' || pc.connectionState === 'closed' || pc.connectionState === 'disconnected') {
+      stopStatsPolling(peerId);
       removeRemoteVideoElement(peerId);
       try { pc.close(); } catch (e) {}
       delete peers[peerId];
@@ -515,6 +632,7 @@ function leaveCall() {
   reconnectTimer = null;
   reconnectAttempts = 0;
   Object.keys(iceReconnectTimers).forEach(k => { clearTimeout(iceReconnectTimers[k]); delete iceReconnectTimers[k]; });
+  Object.keys(statsIntervals).forEach(pid => stopStatsPolling(pid));
   send({ type: 'leave' });
   try { Object.values(peers).forEach(pc => pc.close()); } catch (e) {}
   Object.keys(peers).forEach(k => delete peers[k]);

@@ -167,3 +167,53 @@ video {
   opacity: 0;
   transform: translateX(20px);
 }
+
+/* Quality indicator badge */
+.quality-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 7px 3px 5px;
+  border-radius: 12px;
+  cursor: pointer;
+  user-select: none;
+  z-index: 10;
+  backdrop-filter: blur(4px);
+  transition: background 0.2s;
+}
+.quality-badge:hover { background: rgba(0, 0, 0, 0.75); }
+.quality-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #9ca3af;
+  flex-shrink: 0;
+  transition: background 0.3s;
+}
+.quality-badge[data-quality="good"] .quality-dot   { background: #22c55e; }
+.quality-badge[data-quality="fair"] .quality-dot   { background: #f59e0b; }
+.quality-badge[data-quality="poor"] .quality-dot   { background: #ef4444; }
+.quality-detail {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  background: rgba(0, 0, 0, 0.8);
+  color: #f3f4f6;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
+  padding: 8px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  z-index: 20;
+}
+.quality-badge.open .quality-detail { display: block; }
