@@ -22,14 +22,23 @@ const peers = {}; // peerId -> RTCPeerConnection
 const remoteVideos = {}; // peerId -> HTMLVideoElement
 const pendingCandidates = {}; // peerId -> []
 const participantColors = {}; // peerId -> color
-      const db = Math.max(0, totalBytes - lastStatsData[peerId].bytes);
+let ownParticipantId = null;
+let ownName = null;
 
 // Quality indicator state
 const statsIntervals = {}; // peerId -> intervalId
 const lastStatsData = {}; // peerId -> { bytes, ts }
 const lastQuality = {}; // peerId -> 'good'|'fair'|'poor'
+const statsPollingActive = {}; // peerId -> bool (in-flight guard)
 
 const QUALITY_LABELS = { good: '良好', fair: '普通', poor: '低品質', measuring: '計測中' };
+
+// Single document-level click handler for all quality badges (avoids per-badge listener leak)
+document.addEventListener('click', (e) => {
+  document.querySelectorAll('.quality-badge.open').forEach(b => {
+    if (!b.contains(e.target)) b.classList.remove('open');
+  });
+});
 
 function getQualityLevel(rttMs, lossRate) {
   if (rttMs < 150 && lossRate < 0.02) return 'good';
@@ -46,15 +55,26 @@ function updateQualityBadge(peerId, rttMs, lossRate, bitrateKbps) {
   if (!badge) {
     badge = document.createElement('div');
     badge.className = 'quality-badge';
+    badge.setAttribute('role', 'button');
+    badge.setAttribute('tabindex', '0');
+    badge.setAttribute('aria-expanded', 'false');
+    badge.setAttribute('aria-label', '接続品質の詳細');
     badge.innerHTML =
       '<span class="quality-dot"></span>' +
       '<span class="quality-label"></span>' +
       '<div class="quality-detail"></div>';
     badge.addEventListener('click', (e) => {
       e.stopPropagation();
-      badge.classList.toggle('open');
+      const open = badge.classList.toggle('open');
+      badge.setAttribute('aria-expanded', String(open));
     });
-    document.addEventListener('click', () => badge.classList.remove('open'));
+    badge.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        const open = badge.classList.toggle('open');
+        badge.setAttribute('aria-expanded', String(open));
+      }
+    });
     tile.appendChild(badge);
   }
 
@@ -84,8 +104,13 @@ function updateQualityBadge(peerId, rttMs, lossRate, bitrateKbps) {
 }
 
 async function pollStats(peerId) {
+  if (statsPollingActive[peerId]) return; // skip if previous poll is still in-flight
   const pc = peers[peerId];
-  if (!pc) return;
+  if (!pc || pc.connectionState === 'closed' || pc.connectionState === 'failed') {
+    stopStatsPolling(peerId);
+    return;
+  }
+  statsPollingActive[peerId] = true;
   try {
     const stats = await pc.getStats();
     let rttMs = null;
@@ -112,13 +137,15 @@ async function pollStats(peerId) {
     let bitrateKbps = 0;
     if (lastStatsData[peerId]) {
       const dt = (now - lastStatsData[peerId].ts) / 1000;
-      const db = totalBytes - lastStatsData[peerId].bytes;
+      const db = Math.max(0, totalBytes - lastStatsData[peerId].bytes);
       bitrateKbps = dt > 0 ? Math.round((db * 8) / (dt * 1000)) : 0;
     }
     lastStatsData[peerId] = { bytes: totalBytes, ts: now };
     updateQualityBadge(peerId, rttMs, lossRate, bitrateKbps);
   } catch (_e) {
     // Connection may have been closed
+  } finally {
+    statsPollingActive[peerId] = false;
   }
 }
 
@@ -135,6 +162,7 @@ function stopStatsPolling(peerId) {
   }
   delete lastStatsData[peerId];
   delete lastQuality[peerId];
+  delete statsPollingActive[peerId];
 }
 
 // Reconnect state
