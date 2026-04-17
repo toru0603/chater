@@ -93,11 +93,11 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const owner = github.context.repo.owner;
-            const repo = github.context.repo.repo;
-            const payload = github.context.payload || {};
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const payload = context.payload || {};
             let prs = [];
-            let headSha = github.context.sha || '';
+            let headSha = context.sha || '';
 
             if (payload.workflow_run) {
               const wr = payload.workflow_run;
